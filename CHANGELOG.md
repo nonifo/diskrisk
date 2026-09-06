@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.3] — 2026-09-06
+
+### Diskrisk
+- **History** button on each risk attribute: when it was first seen, sparkline, and
+  each sample with Δ (grew / baseline)
+- JSON API: `/history` (optional `?serial=&attr=`), and `history[]` on findings in `/json`
+
 ## [1.3.2] — 2026-09-06
 
 ### topology_collect.py
@@ -54,6 +61,7 @@ LLM assistants — see [AI.md](AI.md).
 - Trend history (baseline / Now / GROWING)
 - Git-based install (`install.sh` / `update.sh`) with config under `/etc/diskrisk/`
 
+[1.3.3]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.3
 [1.3.2]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.2
 [1.3.1]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.1
 [1.3.0]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.0

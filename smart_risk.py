@@ -23,8 +23,9 @@ from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
-__version__ = "1.3.2"
+__version__ = "1.3.3"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
@@ -266,6 +267,7 @@ class Finding:
     growing: bool = False
     first_seen: str = ""
     samples: int = 0
+    history: list[dict[str, Any]] = field(default_factory=list)  # [{ts, value}, …]
 
 
 @dataclass
@@ -603,6 +605,7 @@ def update_history(risks: list[DiskRisk]) -> dict[str, Any]:
             f.prev_value = prev
             f.first_seen = str(entry.get("first_seen") or "")
             f.samples = len(samples)
+            f.history = [{"ts": s.get("ts"), "value": s.get("value")} for s in samples]
             if first is not None:
                 f.delta_total = cur - first
             if prev is not None:
@@ -701,23 +704,78 @@ def _finding_trend(f: Finding) -> str:
     )
 
 
-def _finding_attr_row(f: Finding) -> str:
-    """HTML row for one risk attribute with visible trend columns."""
+def _sparkline_svg(samples: list[dict[str, Any]], width: int = 280, height: int = 56) -> str:
+    """Tiny SVG line chart for history samples."""
+    vals: list[int] = []
+    for s in samples:
+        v = _as_int(s.get("value"))
+        if v is not None:
+            vals.append(v)
+    if len(vals) < 1:
+        return f'<svg width="{width}" height="{height}"></svg>'
+    if len(vals) == 1:
+        vals = [vals[0], vals[0]]
+    lo, hi = min(vals), max(vals)
+    span = max(hi - lo, 1)
+    pad = 4
+    pts = []
+    n = len(vals)
+    for i, v in enumerate(vals):
+        x = pad + (width - 2 * pad) * (i / (n - 1))
+        y = height - pad - (height - 2 * pad) * ((v - lo) / span)
+        pts.append(f"{x:.1f},{y:.1f}")
+    poly = " ".join(pts)
+    return (
+        f'<svg class="spark" viewBox="0 0 {width} {height}" width="{width}" height="{height}" '
+        f'role="img" aria-label="value over time">'
+        f'<polyline fill="none" stroke="#007d8a" stroke-width="2" points="{poly}"/>'
+        f'<circle cx="{pts[-1].split(",")[0]}" cy="{pts[-1].split(",")[1]}" r="3" fill="#c44a32"/>'
+        f"</svg>"
+    )
+
+
+def _history_payload(r: DiskRisk, f: Finding) -> dict[str, Any]:
+    short = SHORT.get(f.name, f.name)
+    return {
+        "system": r.system,
+        "serial": r.serial,
+        "device": r.name,
+        "attr": f.name,
+        "short": short,
+        "help": _attr_help(f.name),
+        "level": f.level,
+        "growing": f.growing,
+        "first_seen": f.first_seen,
+        "first_value": f.first_value,
+        "value": f.value,
+        "delta_total": f.delta_total,
+        "samples": f.history,
+    }
+
+
+def _finding_attr_row(r: DiskRisk, f: Finding) -> str:
+    """HTML row for one risk attribute with visible trend columns + history opener."""
     short = SHORT.get(f.name, f.name)
     help_text = _attr_help(f.name)
     if f.note:
         help_text = f"{help_text} [{f.note}]"
     if f.first_seen:
         help_text = f"{help_text} · first seen {f.first_seen}"
-    # Keep full attr name in tooltip for power users.
     help_text = f"{short} ({f.name}): {help_text}"
     trend = _trend_label(f)
     trend_cls = {"GROWING": "growing", "stable": "stable", "baseline": "base"}[trend]
     trend_help = TREND_HELP.get(trend, trend)
     lvl = "growing" if f.growing else f.level
+    payload = html.escape(json.dumps(_history_payload(r, f), ensure_ascii=False), quote=True)
+    n = len(f.history)
+    hist_btn = (
+        f'<button type="button" class="hist-btn" data-hist="{payload}" '
+        f'title="Open history: when this value appeared and how it changed">'
+        f"History ({n})</button>"
+    )
     return (
         f'<tr class="attr {lvl}">'
-        f'<td class="attr-name">{_chip(lvl, short, help_text)}</td>'
+        f'<td class="attr-name">{_chip(lvl, short, help_text)} {hist_btn}</td>'
         f'<td class="num" title="{html.escape(help_text, quote=True)}">'
         f"{html.escape(str(f.value))}</td>"
         f'<td class="num">{html.escape(str(f.first_value if f.first_value is not None else "—"))}</td>'
@@ -775,6 +833,7 @@ def _serialize_finding(f: Finding) -> dict[str, Any]:
         "growing": f.growing,
         "first_seen": f.first_seen,
         "samples": f.samples,
+        "history": f.history,
     }
 
 
@@ -976,7 +1035,7 @@ def render_html(report: dict[str, Any]) -> str:
                 "<th>Attribute</th><th>Now</th><th>Baseline</th>"
                 "<th>Δ tot</th><th>Δ last</th><th>Trend</th>"
                 "</tr></thead><tbody>"
-                + "".join(_finding_attr_row(f) for f in r.findings)
+                + "".join(_finding_attr_row(r, f) for f in r.findings)
                 + "</tbody></table>"
             )
         elif (r.scrutiny_status or 0) >= 2:
@@ -1202,6 +1261,32 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 .badge.grow, .badge.growing {{ background: rgba(196,74,50,.18); color: #8a3222; }}
 .badge.stable {{ background: rgba(47,122,85,.14); color: #2f7a55; }}
 .badge.base {{ background: rgba(0,125,138,.12); color: #005f69; }}
+.hist-btn {{
+  margin-left: .35rem; border: 1px solid var(--line); background: rgba(0,125,138,.08);
+  color: var(--teal); font: inherit; font-size: .68rem; font-weight: 700;
+  padding: .12rem .4rem; border-radius: 6px; cursor: pointer;
+}}
+.hist-btn:hover {{ background: rgba(0,125,138,.16); }}
+.hist-modal {{
+  display: none; position: fixed; inset: 0; z-index: 40;
+  background: rgba(18,23,24,.45); align-items: center; justify-content: center; padding: 1rem;
+}}
+.hist-modal.open {{ display: flex; }}
+.hist-card {{
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  max-width: 36rem; width: 100%; max-height: 90vh; overflow: auto; padding: 1rem 1.1rem;
+  box-shadow: 0 12px 40px rgba(0,0,0,.18);
+}}
+.hist-card h3 {{ margin: 0 0 .35rem; font-size: 1.05rem; }}
+.hist-card .meta {{ margin: 0 0 .75rem; }}
+.hist-card table {{ width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .75rem; }}
+.hist-card th, .hist-card td {{ text-align: left; padding: .3rem .35rem; border-bottom: 1px solid var(--line); }}
+.hist-card th {{ color: var(--muted); font-size: .72rem; text-transform: uppercase; }}
+.hist-card .grow-row {{ color: var(--grow); font-weight: 600; }}
+.hist-close {{
+  float: right; border: 0; background: transparent; font-size: 1.2rem; cursor: pointer; color: var(--muted);
+}}
+.spark {{ display: block; margin: .4rem 0; background: rgba(0,125,138,.04); border-radius: 8px; }}
 .view-toggle {{
   display: inline-flex; gap: .35rem; margin: 0 0 1rem; padding: .2rem;
   background: rgba(0,125,138,.08); border-radius: 999px; border: 1px solid var(--line);
@@ -1248,7 +1333,8 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     topology mapped: {mapped}<br/>
     Source: Beszel attributes{(' + Scrutiny' if SCRUTINY_URL else '')} ·
     <a href="/json">JSON</a> ·
-    <a href="/text">text</a>
+    <a href="/text">text</a> ·
+    <a href="/history">history</a>
   </p>
 
   <div class="view-toggle" role="tablist" aria-label="View mode">
@@ -1296,6 +1382,19 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     {topo_html}
   </div>
 
+  <div id="hist-modal" class="hist-modal" role="dialog" aria-modal="true" aria-labelledby="hist-title" hidden>
+    <div class="hist-card">
+      <button type="button" class="hist-close" id="hist-close" aria-label="Close">×</button>
+      <h3 id="hist-title">History</h3>
+      <p class="meta" id="hist-meta"></p>
+      <div id="hist-spark"></div>
+      <table>
+        <thead><tr><th>When</th><th>Value</th><th>Δ</th><th></th></tr></thead>
+        <tbody id="hist-body"></tbody>
+      </table>
+    </div>
+  </div>
+
   <script>
   (function () {{
     var buttons = document.querySelectorAll('.view-toggle button');
@@ -1317,6 +1416,76 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     var saved = null;
     try {{ saved = localStorage.getItem(key); }} catch (e) {{}}
     if (saved === 'topology' || saved === 'list') show(saved);
+
+    var modal = document.getElementById('hist-modal');
+    var title = document.getElementById('hist-title');
+    var meta = document.getElementById('hist-meta');
+    var spark = document.getElementById('hist-spark');
+    var body = document.getElementById('hist-body');
+    function closeHist() {{
+      modal.classList.remove('open');
+      modal.hidden = true;
+    }}
+    document.getElementById('hist-close').addEventListener('click', closeHist);
+    modal.addEventListener('click', function (e) {{ if (e.target === modal) closeHist(); }});
+    document.addEventListener('keydown', function (e) {{ if (e.key === 'Escape') closeHist(); }});
+
+    function sparkSvg(samples) {{
+      var vals = [];
+      for (var i = 0; i < samples.length; i++) {{
+        var n = Number(samples[i].value);
+        if (!isNaN(n)) vals.push(n);
+      }}
+      if (!vals.length) return '';
+      if (vals.length === 1) vals.push(vals[0]);
+      var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+      var span = Math.max(hi - lo, 1), w = 280, h = 56, pad = 4, pts = [];
+      for (var j = 0; j < vals.length; j++) {{
+        var x = pad + (w - 2 * pad) * (j / (vals.length - 1));
+        var y = h - pad - (h - 2 * pad) * ((vals[j] - lo) / span);
+        pts.push(x.toFixed(1) + ',' + y.toFixed(1));
+      }}
+      var last = pts[pts.length - 1].split(',');
+      return '<svg class="spark" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '">' +
+        '<polyline fill="none" stroke="#007d8a" stroke-width="2" points="' + pts.join(' ') + '"/>' +
+        '<circle cx="' + last[0] + '" cy="' + last[1] + '" r="3" fill="#c44a32"/></svg>';
+    }}
+
+    function openHist(data) {{
+      title.textContent = (data.short || data.attr) + ' — ' + (data.serial || data.device || '');
+      meta.innerHTML = (data.system || '') +
+        (data.first_seen ? ' · first seen <strong>' + data.first_seen + '</strong>' : '') +
+        ' · now <strong>' + data.value + '</strong>' +
+        (data.delta_total != null ? ' · Δ tot <strong>' + (data.delta_total > 0 ? '+' : '') + data.delta_total + '</strong>' : '') +
+        '<br/>' + (data.help || '');
+      var samples = data.samples || [];
+      spark.innerHTML = sparkSvg(samples);
+      var rows = '';
+      var prev = null;
+      for (var i = 0; i < samples.length; i++) {{
+        var s = samples[i];
+        var v = Number(s.value);
+        var dlt = (prev != null && !isNaN(v)) ? (v - prev) : null;
+        var grow = dlt != null && dlt > 0;
+        var label = grow ? 'grew' : (dlt === 0 ? 'same' : (i === 0 ? 'baseline' : ''));
+        rows += '<tr class="' + (grow ? 'grow-row' : '') + '">' +
+          '<td>' + (s.ts || '') + '</td>' +
+          '<td>' + s.value + '</td>' +
+          '<td>' + (dlt == null ? '—' : (dlt > 0 ? '+' : '') + dlt) + '</td>' +
+          '<td>' + label + '</td></tr>';
+        if (!isNaN(v)) prev = v;
+      }}
+      body.innerHTML = rows || '<tr><td colspan="4">No samples yet.</td></tr>';
+      modal.hidden = false;
+      modal.classList.add('open');
+    }}
+
+    document.querySelectorAll('.hist-btn').forEach(function (btn) {{
+      btn.addEventListener('click', function () {{
+        try {{ openHist(JSON.parse(btn.getAttribute('data-hist'))); }}
+        catch (err) {{ console.error(err); }}
+      }});
+    }});
   }})();
   </script>
 </body>
@@ -1364,6 +1533,52 @@ class Handler(BaseHTTPRequestHandler):
                     self._send(200, ctype, data, cache="public, max-age=86400")
                     return
             self._send(404, "text/plain; charset=utf-8", b"branding missing\n")
+            return
+
+        if path in ("/history", "/history.json"):
+            qs = parse_qs(urlparse(self.path).query)
+            serial_q = (qs.get("serial") or [""])[0].strip()
+            attr_q = (qs.get("attr") or [""])[0].strip()
+            hist = load_history()
+            attrs = hist.get("attrs") or {}
+            items = []
+            for key, entry in attrs.items():
+                if not isinstance(entry, dict):
+                    continue
+                if serial_q and _norm_serial(str(entry.get("serial") or "")) != _norm_serial(serial_q):
+                    if serial_q not in str(entry.get("serial") or "") and serial_q not in key:
+                        continue
+                if attr_q and str(entry.get("attr") or "") != attr_q and attr_q not in key:
+                    continue
+                samples = entry.get("samples") or []
+                items.append(
+                    {
+                        "key": key,
+                        "system": entry.get("system"),
+                        "serial": entry.get("serial"),
+                        "device": entry.get("device"),
+                        "attr": entry.get("attr"),
+                        "short": SHORT.get(str(entry.get("attr") or ""), entry.get("attr")),
+                        "help": _attr_help(str(entry.get("attr") or "")),
+                        "first_seen": entry.get("first_seen"),
+                        "first_value": entry.get("first_value"),
+                        "last_seen": entry.get("last_seen"),
+                        "last_value": entry.get("last_value"),
+                        "samples": samples,
+                    }
+                )
+            items.sort(key=lambda x: (str(x.get("system") or ""), str(x.get("serial") or ""), str(x.get("attr") or "")))
+            payload = {
+                "generated": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "history_path": str(HISTORY_PATH),
+                "count": len(items),
+                "items": items,
+            }
+            self._send(
+                200,
+                "application/json; charset=utf-8",
+                json.dumps(payload, indent=2).encode(),
+            )
             return
 
         try:
