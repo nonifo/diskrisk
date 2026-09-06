@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-__version__ = "1.3.5"
+__version__ = "1.3.6"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
@@ -944,6 +944,31 @@ def _build_topology_tree(
     return tree, unmapped
 
 
+def _attrs_table_html(disk: Any, is_risk: bool) -> str:
+    """Shared Attribute / Now / Baseline / Δ / Trend / Hist table (list + topology)."""
+    if not is_risk:
+        return ""
+    findings = getattr(disk, "findings", None) or []
+    if findings:
+        body = "".join(_finding_attr_row(disk, f) for f in findings)
+        return (
+            '<table class="attrs"><colgroup>'
+            '<col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>'
+            '<col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/>'
+            '<col class="c-a-hist"/>'
+            "</colgroup><thead><tr>"
+            '<th class="attr-name">Attribute</th>'
+            '<th class="num">Now</th><th class="num">Baseline</th>'
+            '<th class="num">Δ tot</th><th class="num">Δ last</th>'
+            '<th class="trend">Trend</th><th class="hist">Hist</th>'
+            "</tr></thead>"
+            f"<tbody>{body}</tbody></table>"
+        )
+    if (getattr(disk, "scrutiny_status", None) or 0) >= 2:
+        return _chip("critical", "Scrutiny flagged", STATUS_HELP["Scrutiny flagged"])
+    return ""
+
+
 def _disk_finding_chips(disk: Any, is_risk: bool, limit: int = 4) -> str:
     if not is_risk or not getattr(disk, "findings", None):
         return ""
@@ -973,8 +998,8 @@ def _render_topology_disk_li(disk: Any, is_risk: bool) -> str:
     role = ""
     if disk.topology and disk.topology.role:
         role = f' <span class="muted topo-role">({html.escape(disk.topology.role)})</span>'
-    findings = _disk_finding_chips(disk, is_risk)
-    findings_html = f'<div class="topo-findings">{findings}</div>' if findings else ""
+    attrs = _attrs_table_html(disk, is_risk)
+    attrs_html = f'<div class="topo-attrs">{attrs}</div>' if attrs else ""
     risk_cls = " risk" if is_risk else ""
     grow_cls = " growing" if is_risk and getattr(disk, "any_growing", False) else ""
     return (
@@ -983,7 +1008,7 @@ def _render_topology_disk_li(disk: Any, is_risk: bool) -> str:
         f'<code class="topo-serial">{html.escape(disk.serial or disk.name)}</code>'
         f"{role}</div>"
         f'<div class="sub topo-disk-meta">{html.escape(disk.name)} · {html.escape(disk.model)}</div>'
-        f"{findings_html}"
+        f"{attrs_html}"
         "</li>"
     )
 
@@ -1228,20 +1253,7 @@ def render_html(report: dict[str, Any]) -> str:
         if r.any_growing:
             sev = "growing"
         if r.findings:
-            attr_table = (
-                '<table class="attrs"><colgroup>'
-                '<col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>'
-                '<col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/>'
-                '<col class="c-a-hist"/>'
-                "</colgroup><thead><tr>"
-                '<th class="attr-name">Attribute</th>'
-                '<th class="num">Now</th><th class="num">Baseline</th>'
-                '<th class="num">Δ tot</th><th class="num">Δ last</th>'
-                '<th class="trend">Trend</th><th class="hist">Hist</th>'
-                "</tr></thead><tbody>"
-                + "".join(_finding_attr_row(r, f) for f in r.findings)
-                + "</tbody></table>"
-            )
+            attr_table = _attrs_table_html(r, True)
         elif (r.scrutiny_status or 0) >= 2:
             attr_table = _chip("critical", "Scrutiny flagged", STATUS_HELP["Scrutiny flagged"])
         else:
@@ -1581,8 +1593,13 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
 .topo-disk-main {{ display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; }}
 .topo-serial {{ font-size: .9rem; font-weight: 600; }}
 .topo-disk-meta {{ margin-top: .1rem; }}
-.topo-findings {{ margin-top: .3rem; }}
+.topo-attrs {{ margin-top: .45rem; max-width: 42rem; }}
+.topo-attrs table.attrs {{
+  background: rgba(255,252,246,.85); border: 1px solid var(--line); border-radius: 8px;
+}}
+.topo-attrs table.attrs th {{ background: rgba(0,125,138,.06); }}
 .topo-role {{ font-size: .8rem; }}
+.topo-findings {{ margin-top: .3rem; }}
 .print-sheet {{ max-width: 52rem; }}
 .print-head h1 {{ margin: 0 0 .35rem; font-size: 1.25rem; }}
 .print-meta {{ margin: 0 0 .75rem; color: var(--muted); }}
@@ -1711,7 +1728,7 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
 
   <div id="view-topology" class="view-panel">
     <h2>Pool topology</h2>
-    <p class="meta">Host → pool → vdev, indented. Same SMART risk chips, grouped how disks belong together.</p>
+    <p class="meta">Host → pool → vdev, indented. Risk disks show the same Attribute / Now / Baseline / Δ / Hist table as the disk list.</p>
     {topo_html}
   </div>
 

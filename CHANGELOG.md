@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.6] — 2026-09-06
+
+### Diskrisk
+- **Topology** view: risk disks show the full Attribute / Now / Baseline / Δ / Trend / Hist table (same as Disk list)
+
 ## [1.3.5] — 2026-09-06
 
 ### Diskrisk
@@ -75,6 +80,8 @@ LLM assistants — see [AI.md](AI.md).
 - Trend history (baseline / Now / GROWING)
 - Git-based install (`install.sh` / `update.sh`) with config under `/etc/diskrisk/`
 
+[1.3.6]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.6
+[1.3.5]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.5
 [1.3.4]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.4
 [1.3.3]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.3
 [1.3.2]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.2

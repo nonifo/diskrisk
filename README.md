@@ -1,6 +1,6 @@
 # Diskrisk
 
-**v1.3.5** — find the **right physical disk** when something is dying, and see
+**v1.3.6** — find the **right physical disk** when something is dying, and see
 **whether the problem is getting worse**, without chassis LEDs or vendor GUIs.
 
 Built for DIY / homelab storage: shelves of identical drives, SAS JBODs, TrueNAS
@@ -64,7 +64,7 @@ Fictional serials — for illustration only.
 
 ![Diskrisk topology](docs/images/diskrisk-topology-demo.png)
 
-*Topology: Host → pool → vdev with indentation; risk disks highlighted in place.*
+*Topology: Host → pool → vdev; risk disks include the full SMART trend table + Hist.*
 
 ![Diskrisk print sheet](docs/images/diskrisk-print-demo.png)
 

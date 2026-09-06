@@ -209,7 +209,7 @@ table.attrs th.attr-name, table.attrs td.attr-name { text-align: left; white-spa
     <p class="product">Diskrisk</p>
   </header>
   <p class="meta">
-    Diskrisk v1.3.5 ·
+    Diskrisk v1.3.6 ·
     2026-09-06 12:00:00Z ·
     48 disks ·
     3 with findings ·
@@ -357,7 +357,7 @@ table.attrs th.attr-name, table.attrs td.attr-name { text-align: left; white-spa
 
   <div id="view-topology" class="view-panel">
     <h2>Pool topology</h2>
-    <p class="meta">Host → pool → vdev, indented. Same SMART risk chips, grouped how disks belong together.</p>
+    <p class="meta">Host → pool → vdev, indented. Risk disks show the same Attribute / Now / Baseline / Δ / Hist table as the disk list.</p>
 
     <section class="topo-host">
       <h3 class="topo-host-h"><span class="topo-level">Host</span> nas-garage <span class="topo-count">5 disks</span></h3>
@@ -376,7 +376,20 @@ table.attrs th.attr-name, table.attrs td.attr-name { text-align: left; white-spa
                 <li class="topo-disk risk">
                   <div class="topo-disk-main"><span class="chip warn">warn</span> <code class="topo-serial">DEMO-SERIAL-MZ108</code></div>
                   <div class="sub topo-disk-meta">/dev/sdk · Example SATA 3TB</div>
-                  <div class="topo-findings"><span class="chip warn">MultiZone=108</span></div>
+                  <div class="topo-attrs"><table class="attrs"><colgroup>
+                    <col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>
+                    <col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/><col class="c-a-hist"/>
+                    </colgroup><thead><tr>
+                      <th class="attr-name">Attribute</th><th class="num">Now</th><th class="num">Baseline</th>
+                      <th class="num">Δ tot</th><th class="num">Δ last</th><th class="trend">Trend</th><th class="hist">Hist</th>
+                    </tr></thead><tbody>
+                    <tr class="attr warn">
+                      <td class="attr-name"><span class="chip warn">MultiZone</span></td>
+                      <td class="num">108</td><td class="num">108</td><td class="num">0</td><td class="num">0</td>
+                      <td class="trend"><span class="badge stable">stable</span></td>
+                      <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+                    </tr>
+                    </tbody></table></div>
                 </li>
                 <li class="topo-disk">
                   <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-CLEAN-001</code></div>
@@ -390,7 +403,20 @@ table.attrs th.attr-name, table.attrs td.attr-name { text-align: left; white-spa
                 <li class="topo-disk growing">
                   <div class="topo-disk-main"><span class="chip growing">GROWING</span> <code class="topo-serial">DEMO-SERIAL-815A</code></div>
                   <div class="sub topo-disk-meta">/dev/sdt · Example SAS 2TB</div>
-                  <div class="topo-findings"><span class="chip growing">GrownDefect=815↑</span></div>
+                  <div class="topo-attrs"><table class="attrs"><colgroup>
+                    <col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>
+                    <col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/><col class="c-a-hist"/>
+                    </colgroup><thead><tr>
+                      <th class="attr-name">Attribute</th><th class="num">Now</th><th class="num">Baseline</th>
+                      <th class="num">Δ tot</th><th class="num">Δ last</th><th class="trend">Trend</th><th class="hist">Hist</th>
+                    </tr></thead><tbody>
+                    <tr class="attr growing">
+                      <td class="attr-name"><span class="chip growing">GrownDefect</span></td>
+                      <td class="num">815</td><td class="num">725</td><td class="num">+90</td><td class="num">+15</td>
+                      <td class="trend"><span class="badge growing">GROWING</span></td>
+                      <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+                    </tr>
+                    </tbody></table></div>
                 </li>
                 <li class="topo-disk">
                   <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-PARTNER-OK</code></div>
@@ -429,11 +455,32 @@ table.attrs th.attr-name, table.attrs td.attr-name { text-align: left; white-spa
                 <li class="topo-disk growing">
                   <div class="topo-disk-main"><span class="chip growing">GROWING</span> <code class="topo-serial">DEMO-SERIAL-PEND9</code></div>
                   <div class="sub topo-disk-meta">/dev/sdp · Example SATA 3TB</div>
-                  <div class="topo-findings">
-                    <span class="chip growing">Pending=9↑</span>
-                    <span class="chip growing">OfflineUnc=3↑</span>
-                    <span class="chip growing">MultiZone=4↑</span>
-                  </div>
+                  <div class="topo-attrs"><table class="attrs"><colgroup>
+                    <col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>
+                    <col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/><col class="c-a-hist"/>
+                    </colgroup><thead><tr>
+                      <th class="attr-name">Attribute</th><th class="num">Now</th><th class="num">Baseline</th>
+                      <th class="num">Δ tot</th><th class="num">Δ last</th><th class="trend">Trend</th><th class="hist">Hist</th>
+                    </tr></thead><tbody>
+                    <tr class="attr growing">
+                      <td class="attr-name"><span class="chip growing">Pending</span></td>
+                      <td class="num">9</td><td class="num">8</td><td class="num">+1</td><td class="num">+1</td>
+                      <td class="trend"><span class="badge growing">GROWING</span></td>
+                      <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+                    </tr>
+                    <tr class="attr growing">
+                      <td class="attr-name"><span class="chip growing">OfflineUnc</span></td>
+                      <td class="num">3</td><td class="num">1</td><td class="num">+2</td><td class="num">+2</td>
+                      <td class="trend"><span class="badge growing">GROWING</span></td>
+                      <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+                    </tr>
+                    <tr class="attr growing">
+                      <td class="attr-name"><span class="chip growing">MultiZone</span></td>
+                      <td class="num">4</td><td class="num">3</td><td class="num">+1</td><td class="num">+1</td>
+                      <td class="trend"><span class="badge growing">GROWING</span></td>
+                      <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+                    </tr>
+                    </tbody></table></div>
                 </li>
                 <li class="topo-disk">
                   <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-CLEAN-003</code></div>
