@@ -95,7 +95,9 @@ Key: `{serial}|{attr_name}` (falls back to device name if serial is missing).
 Per attribute the store keeps:
 
 - `first_value` / `first_seen` — **baseline**
-- `samples[]` — up to `SMART_RISK_HISTORY_SAMPLES` (default 120)
+- `samples[]` — retained for `SMART_RISK_HISTORY_DAYS` (default 365), at most
+  `SMART_RISK_HISTORY_PER_DAY` points per day (default 2); optional hard cap
+  `SMART_RISK_HISTORY_SAMPLES`
 - A sample is written when the value **changes**, or at least **once per calendar day**
 
 Each report annotates findings with:
@@ -247,6 +249,14 @@ machine with the same `SMART_RISK_URL`.
 | `SCRUTINY_URL` | Optional Scrutiny base URL |
 | `SMART_RISK_LISTEN` | Bind address |
 | `SMART_RISK_HISTORY` | Path to `history.json` |
+| `SMART_RISK_HISTORY_DAYS` | Retain samples this many days (default `365`) |
+| `SMART_RISK_HISTORY_PER_DAY` | Max points per calendar day (default `2`) |
+| `SMART_RISK_HISTORY_SAMPLES` | Optional hard cap (default `DAYS × PER_DAY`) |
+| `SMART_RISK_TOPOLOGY` | Per-host topology JSON dir |
+| `DISKRISK_RISK_ENGINE` | `classic` (default) / `hybrid` / `stats` |
+| `DISKRISK_INTERFACE_HISTORICAL_DAYS` | UDMA/interface scar window (default `14`) |
+| `DISKRISK_MEDIA_SCAR_HISTORICAL_DAYS` | GrownDefect/Realloc scar window (default `30`) |
+| `DISKRISK_SMART_DIR` | Optional `smart_collect.py` overlays (for `stats`) |
 | `SMART_RISK_BRANDING` | Branding directory |
 | `DISKRISK_PRODUCT` | UI product label |
 | `DISKRISK_BRAND_URL` | Optional logo link target |
@@ -270,10 +280,75 @@ machine with the same `SMART_RISK_URL`.
 
 | | MultiZone | Pending / GrownDefect |
 |---|---|---|
-| Level | Warn | Critical |
-| Alone, stable | Watch / noise | Plan replacement |
-| GROWING | Watch more closely | Replace soon |
+| Level (classic engine) | Warn | Critical |
+| Level (hybrid engine) | INFO advisory (scar); WARN only if GROWING **and** a media peer | Critical |
+| Alone, stable | Watch / noise — not “dying disk” | Plan replacement |
+| GROWING | Watch; hybrid raises only with media correlation | Replace soon |
 | Same ZFS vdev as another critical | Raises concern | **Urgent** (esp. mirrors / thin raidz) |
+
+---
+
+## 8b. Risk philosophy (smartmontools decoder + Diskrisk policy)
+
+**Decoder vs policy.** [smartmontools](https://www.smartmontools.org/) (and Beszel’s
+agent wrapping `smartctl`) decode vendor attribute IDs via `drivedb.h` into
+names and RAW values. Diskrisk does **not** ship its own 256-ID encyclopedia.
+It consumes decoded names and applies a **risk policy** plus trend (Now /
+Baseline / Δ / GROWING).
+
+**Priority order** (when data is available):
+
+1. **ATA Device Statistics** (T13 / ACS — e.g. Pending Error Count, reallocated
+   logical sectors) — prefer over classic SMART IDs 5/197/198 when both exist.
+2. **SMART overall FAILED** / prefail normalized value ≤ manufacturer threshold.
+3. **Self-test log** failures.
+4. **ATA error log** (new / non-zero entries).
+5. **Classic SMART attributes**, typed as:
+   - **media** — Pending, Offline Uncorrectable, Reallocated, GrownDefect, …
+   - **interface** — UDMA_CRC, Command_Timeout (cabling / HBA / path)
+   - **advisory** — Multi_Zone_Error_Rate and similar vendor counters
+6. Advisory alone → INFO / watch, **not** “disk is failing”, unless trend
+   correlates with media findings.
+
+References: T13 TR-54 / ACS Device Statistics; smartmontools `smartctl -x -j`
+and Device Statistics pages; Diskrisk `risk_engine.py`.
+
+### Engines (`DISKRISK_RISK_ENGINE`)
+
+| Value | Behaviour |
+|---|---|
+| `classic` (default) | Pre-1.4 maps: raw ≥ 1 on CRITICAL/WARN lists (incl. MultiZone as warn) |
+| `hybrid` | Policy table below; A/B can include `classic_findings` in `/json` |
+| `stats` | hybrid + merge `smart_collect.py` overlays (DevStat / self-test / error log) |
+
+Keep production on **classic** until local A/B looks sane, then enable hybrid.
+
+### Hybrid policy (Fas 2)
+
+| Signal | Policy |
+|---|---|
+| MultiZone (advisory) | INFO if scar; WARN only if GROWING **and** Pending/Realloc/OfflineUnc also present |
+| UDMA_CRC | INTERFACE; GROWING → cabling/HBA; **no increase for 14 days** → historical scar (not actionable). Tunable: `DISKRISK_INTERFACE_HISTORICAL_DAYS` |
+| GrownDefect / Realloc (scar) | MEDIA; GROWING → critical; **no increase for 30 days** → historical scar (often early-life). Pending/OfflineUnc stay critical. Tunable: `DISKRISK_MEDIA_SCAR_HISTORICAL_DAYS` |
+| Pending / OfflineUnc / ReportedUnc | HIGH/CRITICAL (no historical demotion) |
+| Realloc scar (Δ=0, many samples) | Covered by GrownDefect/Realloc 30d rule above |
+| `when_failed` / norm ≤ thresh (prefail) | CRITICAL |
+
+### Device Statistics inventory (Beszel vs collector)
+
+**Inventory (Beszel agent `smart.go`, upstream):** the agent parses
+`ata_device_statistics` but today only pulls **Current Temperature** via
+`findAtaDeviceStatisticsValue` when the normal temperature field is missing.
+Pending Error Count / reallocated logical sectors are **not** injected into the
+named SMART attribute list that the hub exposes to Diskrisk. Hub records remain
+named attrs + values (plus overall SMART state) — not a full DevStat tree.
+
+Until that changes upstream (or Diskrisk grows a richer Beszel client):
+
+- Use **hybrid** on Beszel attrs (fixes MultiZone false positives without new data).
+- Optionally run **`smart_collect.py`** on storage hosts → JSON under
+  `/var/lib/diskrisk/smart/` (same idea as topology). Engine `stats` merges by
+  serial.
 
 ---
 

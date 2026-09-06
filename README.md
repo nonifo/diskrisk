@@ -1,7 +1,9 @@
 # Diskrisk
 
-**v1.3.7** — find the **right physical disk** when something is dying, and see
+**v1.4.0-rc1** — find the **right physical disk** when something is dying, and see
 **whether the problem is getting worse**, without chassis LEDs or vendor GUIs.
+Optional hybrid risk engine (`DISKRISK_RISK_ENGINE`) treats MultiZone as advisory
+and UDMA_CRC as interface noise (default remains classic).
 
 Built for DIY / homelab storage: shelves of identical drives, SAS JBODs, TrueNAS
 boxes, and mixed pools where `/dev/sdX` names reshuffle after every reboot.

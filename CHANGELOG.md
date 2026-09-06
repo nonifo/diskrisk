@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.4.0-rc6] — 2026-09-06
+
+### Diskrisk
+- History retention by days: `SMART_RISK_HISTORY_DAYS=365` (default)
+- Max `SMART_RISK_HISTORY_PER_DAY=2` samples per calendar day
+- Hard cap `SMART_RISK_HISTORY_SAMPLES` defaults to days × per-day
+- `first_seen` / `first_value` kept when old samples age out of the window
+
+## [1.4.0-rc5] — 2026-09-06
+
+### Diskrisk
+- Trend badge shows scar progress: **stable 16d/14d** (days stable / days needed)
+- `/json` findings include `stable_days` + `scar_need_days`
+
+## [1.4.0-rc4] — 2026-09-06
+
+### Diskrisk
+- Surface risk policy from config in UI meta/legend and `/json` → `policy`
+  (`engine`, `interface_historical_days`, `media_scar_historical_days`)
+- `config.example.env` documents the knobs explicitly
+
+## [1.4.0-rc3] — 2026-09-06
+
+### Diskrisk
+- Hybrid: **GrownDefect / Realloc** stable ≥ **30 days** → historical media scar
+  (INFO, off risk list). GROWING stays critical. Pending/OfflineUnc unchanged.
+  Tunable: `DISKRISK_MEDIA_SCAR_HISTORICAL_DAYS`
+
+## [1.4.0-rc2] — 2026-09-06
+
+### Diskrisk
+- Hybrid: **UDMA_CRC / interface** with no increase for **14 days** → historical scar
+  (INFO, dropped from risk list). GROWING still warns. Tunable:
+  `DISKRISK_INTERFACE_HISTORICAL_DAYS`
+
+## [1.4.0-rc1] — 2026-09-06
+
+### Diskrisk — risk engine (local-first)
+- New `risk_engine.py`: **classic** (default) vs **hybrid** / **stats** policy
+- Feature flag `DISKRISK_RISK_ENGINE=classic|hybrid|stats`
+- Hybrid: MultiZone → advisory (INFO scar; WARN only if GROWING + media peer);
+  UDMA_CRC → interface; media counters stay critical
+- `/json` includes `engine` and per-disk `classic_findings` for A/B when not classic
+- UI: media / interface / advisory kind chips + legend (“MultiZone advisory ≠ FAIL”)
+- Docs: SMART-risk-manual §8b (TR-54 / DevStat / smartmontools decoder)
+
+### smart_collect.py (track B)
+- Optional `smartctl -x -j` collector → `/var/lib/diskrisk/smart/` overlays
+  (Device Statistics, SMART FAILED, self-test, ATA error log) for engine=`stats`
+- Beszel hub surface still lacks raw DevStat trees; hybrid works on named attrs alone
+
 ## [1.3.7] — 2026-09-06
 
 ### Diskrisk

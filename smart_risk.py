@@ -25,9 +25,25 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-__version__ = "1.3.7"
+__version__ = "1.4.0-rc6"
 
 _REPO_ROOT = Path(__file__).resolve().parent
+
+# Ensure repo root is importable when installed as a script path.
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+from risk_engine import (  # noqa: E402
+    CLASSIC_CRITICAL as CRITICAL,
+    CLASSIC_WARN as WARN,
+    evaluate as risk_evaluate,
+    interface_historical_days,
+    is_actionable_finding,
+    media_scar_historical_days,
+    policy_settings,
+    refine_after_trend,
+)
+from smart_collect import load_smart_index  # noqa: E402
 
 
 def _load_config_file() -> Path | None:
@@ -86,7 +102,26 @@ LISTEN = os.environ.get("SMART_RISK_LISTEN", "0.0.0.0:8091")
 HISTORY_PATH = Path(
     os.environ.get("SMART_RISK_HISTORY", "/var/lib/diskrisk/history.json")
 )
-HISTORY_MAX_SAMPLES = int(os.environ.get("SMART_RISK_HISTORY_SAMPLES", "120"))
+# Retention window (days) and density — defaults: 1 year, max 2 points/day.
+try:
+    HISTORY_DAYS = max(1, int(os.environ.get("SMART_RISK_HISTORY_DAYS", "365") or "365"))
+except ValueError:
+    HISTORY_DAYS = 365
+try:
+    HISTORY_PER_DAY = max(1, int(os.environ.get("SMART_RISK_HISTORY_PER_DAY", "2") or "2"))
+except ValueError:
+    HISTORY_PER_DAY = 2
+_default_hist_samples = max(HISTORY_DAYS * HISTORY_PER_DAY, 120)
+try:
+    HISTORY_MAX_SAMPLES = max(
+        1,
+        int(
+            os.environ.get("SMART_RISK_HISTORY_SAMPLES", str(_default_hist_samples))
+            or str(_default_hist_samples)
+        ),
+    )
+except ValueError:
+    HISTORY_MAX_SAMPLES = _default_hist_samples
 BRANDING_DIR = Path(
     os.environ.get("SMART_RISK_BRANDING", str(_REPO_ROOT / "branding"))
 )
@@ -101,35 +136,22 @@ TOPOLOGY_DIR = Path(
         str(Path(os.environ.get("SMART_RISK_HISTORY", "/var/lib/diskrisk/history.json")).parent / "topology"),
     )
 )
-
-# Always actionable when raw/value > 0 (or above threshold).
-CRITICAL = {
-    "Reallocated_Sector_Ct": 1,
-    "Current_Pending_Sector": 1,
-    "Offline_Uncorrectable": 1,
-    "Reported_Uncorrect": 1,
-    "Reallocated_Event_Count": 1,
-    "Spin_Retry_Count": 1,
-    "End-to-End_Error": 1,
-    "Runtime_Bad_Block": 1,
-    "GrownDefectList": 1,
-    "ReadTotalUncorrectedErrors": 1,
-    "WriteTotalUncorrectedErrors": 1,
-    "VerifyTotalUncorrectedErrors": 1,
-}
-
-# Useful but often cabling / bus — warn, not "disk dying".
-WARN = {
-    "UDMA_CRC_Error_Count": 1,
-    "Multi_Zone_Error_Rate": 1,
-    "Command_Timeout": 1,
-}
-
-# Only flag if normalized value has breached threshold (Seagate raw is noisy).
-NORM_THRESHOLD_ATTRS = {
-    "Raw_Read_Error_Rate",
-    "Seek_Error_Rate",
-}
+SMART_DIR = Path(
+    os.environ.get(
+        "DISKRISK_SMART_DIR",
+        os.environ.get(
+            "SMART_RISK_SMART",
+            str(
+                Path(os.environ.get("SMART_RISK_HISTORY", "/var/lib/diskrisk/history.json")).parent
+                / "smart"
+            ),
+        ),
+    )
+)
+# classic (default live) | hybrid | stats — see docs/SMART-risk-manual.md §8b
+RISK_ENGINE = (os.environ.get("DISKRISK_RISK_ENGINE") or "classic").strip().lower()
+if RISK_ENGINE not in ("classic", "hybrid", "stats"):
+    RISK_ENGINE = "classic"
 
 SHORT = {
     "Reallocated_Sector_Ct": "Realloc",
@@ -149,14 +171,18 @@ SHORT = {
     "Command_Timeout": "CmdTimeout",
     "Raw_Read_Error_Rate": "RawRead",
     "Seek_Error_Rate": "SeekErr",
+    "Pending_Error_Count": "PendingErr",
+    "Number_of_Reallocated_Logical_Sectors": "ReallocLBA",
+    "Number_of_Reallocation_Candidate_Logical_Sectors": "ReallocCand",
+    "Number_of_Reported_Uncorrectable_Errors": "UncErr",
+    "Number_of_Mechanical_Start_Failures": "MechStart",
+    "SMART_Status": "SMART",
+    "Self_Test": "SelfTest",
+    "ATA_Error_Log": "ATAErrLog",
 }
 
 # Plain-language hover text for attribute chips (and related badges).
 ATTR_HELP = {
-    "Reallocated_Sector_Ct": (
-        "Reallocated sectors: the drive remapped bad sectors to spare area. "
-        "Non-zero means media damage; GROWING means it is still getting worse."
-    ),
     "Current_Pending_Sector": (
         "Pending sectors: sectors that failed read and are waiting to be remapped. "
         "Acute risk — often the strongest early warning of a dying disk."
@@ -187,7 +213,13 @@ ATTR_HELP = {
     ),
     "GrownDefectList": (
         "Grown defect list (SAS): defects found after manufacturing. "
-        "A scar can sit stable for years; GROWING (↑) means new defects are appearing now."
+        "Often present from early life. Hybrid: GROWING = acute; no increase for 30 days "
+        "→ historical scar (not treated as a dying disk)."
+    ),
+    "Reallocated_Sector_Ct": (
+        "Reallocated sectors: the drive remapped bad sectors to spare area. "
+        "GROWING means active remaps. Hybrid: stable ≥30 days → historical scar; "
+        "Pending/OfflineUnc are still acute even when stable."
     ),
     "ReadTotalUncorrectedErrors": (
         "Uncorrected read errors (SAS): reads that failed permanently. "
@@ -202,14 +234,32 @@ ATTR_HELP = {
         "Often appears with other media errors."
     ),
     "UDMA_CRC_Error_Count": (
-        "UDMA CRC: checksum errors on the cable/HBA path (not always the platter). "
-        "Often a loose cable, bad port, or backplane — reseat before condemning the disk. "
-        "GROWING still means the link is noisy right now."
+        "UDMA CRC: checksum errors on the cable/HBA path (not the platter). "
+        "GROWING → noisy link right now. Hybrid: if the counter has not increased "
+        "for 14 days it is treated as a historical scar (not a fault)."
     ),
     "Multi_Zone_Error_Rate": (
-        "Multi-Zone error rate (often WD): soft error / zone noise counter. "
-        "Warn-level alone can be historical; GROWING deserves a closer look with Pending/Realloc."
+        "Multi-Zone error rate (often WD): soft error / zone noise advisory. "
+        "Not FAIL by itself (hybrid: INFO scar; WARN only if GROWING with Pending/Realloc/OfflineUnc)."
     ),
+    "Pending_Error_Count": (
+        "ATA Device Statistics: Pending Error Count — media risk when non-zero."
+    ),
+    "Number_of_Reallocated_Logical_Sectors": (
+        "ATA Device Statistics: reallocated logical sectors (prefer over SMART ID 5 when present)."
+    ),
+    "Number_of_Reallocation_Candidate_Logical_Sectors": (
+        "ATA Device Statistics: reallocation candidates (pending-like)."
+    ),
+    "Number_of_Reported_Uncorrectable_Errors": (
+        "ATA Device Statistics: reported uncorrectable errors."
+    ),
+    "Number_of_Mechanical_Start_Failures": (
+        "ATA Device Statistics: mechanical start failures."
+    ),
+    "SMART_Status": "Overall SMART health bit from smartctl / collector.",
+    "Self_Test": "SMART self-test log reports a failure.",
+    "ATA_Error_Log": "ATA error log has entries (path or media — check smartctl -l error).",
     "Command_Timeout": (
         "Command timeouts: the drive did not answer in time. "
         "Can be load, cable, enclosure, or a disk starting to stall."
@@ -234,8 +284,13 @@ STATUS_HELP = {
     "clean": "No actionable SMART risk attributes on this disk.",
     "ok": "No elevated severity for this row.",
     "risk": "Critical SMART attributes present (Pending, Realloc, GrownDefect, …).",
-    "warn": "Warn-level attributes (often cable/bus noise like UDMA_CRC or MultiZone).",
+    "warn": "Warn-level attributes (often cable/bus noise like UDMA_CRC).",
+    "info": "Advisory / watch — not treated as a failing disk by itself.",
     "GROWING": "At least one risk attribute is still climbing versus baseline.",
+    "media": "Media / platter signal (Pending, Realloc, OfflineUnc, …).",
+    "interface": "Interface / path signal (UDMA_CRC, timeouts) — check cabling/HBA.",
+    "advisory": "Vendor advisory counter (e.g. MultiZone) — not FAIL by itself.",
+    "status": "SMART FAILED / when_failed / self-test.",
     "Scrutiny flagged": (
         "Scrutiny device_status ≥ 2 for this serial — open Scrutiny for details. "
         "Independent of Beszel SMART attributes."
@@ -247,10 +302,13 @@ def _attr_help(name: str) -> str:
     return ATTR_HELP.get(name, f"SMART attribute: {name}")
 
 
-def _chip(level: str, label: str, help_text: str) -> str:
+def _chip(level: str, label: str, help_text: str, kind: str = "") -> str:
     """Risk/status chip with native browser tooltip (title)."""
+    classes = f"chip {html.escape(level)}"
+    if kind:
+        classes += f" kind-{html.escape(kind)}"
     return (
-        f'<span class="chip {html.escape(level)}" '
+        f'<span class="{classes}" '
         f'title="{html.escape(help_text, quote=True)}">{html.escape(label)}</span>'
     )
 
@@ -261,6 +319,8 @@ class Finding:
     name: str
     value: Any
     note: str = ""
+    kind: str = "media"  # media | interface | advisory | status
+    source: str = "smart"  # smart | devstat | status | selftest | errorlog
     # trend (filled after history update)
     first_value: Any = None
     prev_value: Any = None
@@ -270,6 +330,9 @@ class Finding:
     first_seen: str = ""
     samples: int = 0
     history: list[dict[str, Any]] = field(default_factory=list)  # [{ts, value}, …]
+    # Scar window progress (set by refine_after_trend for interface/media scars)
+    stable_days: int | None = None
+    scar_need_days: int | None = None
 
 
 @dataclass
@@ -315,6 +378,7 @@ class DiskRisk:
     model: str
     state: str
     findings: list[Finding] = field(default_factory=list)
+    classic_findings: list[Finding] = field(default_factory=list)  # A/B when engine ≠ classic
     scrutiny_status: int | None = None
     topology: TopologyInfo | None = None
 
@@ -324,6 +388,8 @@ class DiskRisk:
             return 2
         if any(f.level == "warn" for f in self.findings) or (self.scrutiny_status or 0) == 1:
             return 1
+        if any(f.level == "info" for f in self.findings):
+            return 0
         return 0
 
     @property
@@ -490,48 +556,27 @@ def _as_int(value: Any) -> int | None:
         return None
 
 
-def evaluate_attrs(attrs: list[dict]) -> list[Finding]:
-    findings: list[Finding] = []
-    for a in attrs or []:
-        name = a.get("n") or a.get("name") or ""
-        if not name:
-            continue
-        raw = _raw_int(a)
-        v = a.get("v")
-        t = a.get("t")
+def evaluate_attrs(
+    attrs: list[dict],
+    *,
+    engine: str | None = None,
+    smart_extra: dict[str, Any] | None = None,
+) -> tuple[list[Finding], list[Finding]]:
+    """Evaluate attrs via risk_engine. Returns (primary, classic_for_ab)."""
+    eng = engine or RISK_ENGINE
+    primary, classic = risk_evaluate(attrs, engine=eng, smart_extra=smart_extra)
 
-        if name in NORM_THRESHOLD_ATTRS:
-            if v is not None and t is not None:
-                try:
-                    if int(v) <= int(t):
-                        findings.append(
-                            Finding(
-                                "critical",
-                                name,
-                                f"norm={v} thresh={t} raw={raw}",
-                                "normalized value at/under threshold",
-                            )
-                        )
-                except (TypeError, ValueError):
-                    pass
-            continue
+    def _to_finding(e: Any) -> Finding:
+        return Finding(
+            level=e.level,
+            name=e.name,
+            value=e.value,
+            note=e.note or "",
+            kind=getattr(e, "kind", None) or "media",
+            source=getattr(e, "source", None) or "smart",
+        )
 
-        if name in CRITICAL and raw is not None and raw >= CRITICAL[name]:
-            findings.append(Finding("critical", name, raw))
-            continue
-
-        if name in WARN and raw is not None and raw >= WARN[name]:
-            note = "often cabling/HBA" if name == "UDMA_CRC_Error_Count" else ""
-            findings.append(Finding("warn", name, raw, note))
-            continue
-
-        wf = (a.get("wf") or a.get("when_failed") or "").strip()
-        if wf:
-            findings.append(
-                Finding("critical", name, raw if raw is not None else wf, f"when_failed={wf}")
-            )
-
-    return findings
+    return [_to_finding(e) for e in primary], [_to_finding(e) for e in classic]
 
 
 def load_history() -> dict[str, Any]:
@@ -562,11 +607,74 @@ def history_key(serial: str, name: str, device_name: str) -> str:
     return f"{ident}|{name}"
 
 
+def _sample_day(ts: Any) -> str:
+    return str(ts or "")[:10]
+
+
+def _cap_samples_per_day(samples: list[dict], per_day: int) -> list[dict]:
+    """Keep at most per_day points per calendar day (first + last when over)."""
+    if per_day < 1 or not samples:
+        return samples
+    by_day: dict[str, list[dict]] = {}
+    order: list[str] = []
+    for s in samples:
+        day = _sample_day(s.get("ts"))
+        if not day:
+            continue
+        if day not in by_day:
+            order.append(day)
+            by_day[day] = []
+        by_day[day].append(s)
+    out: list[dict] = []
+    for day in order:
+        group = by_day[day]
+        if len(group) <= per_day:
+            out.extend(group)
+        elif per_day == 1:
+            out.append(group[-1])
+        else:
+            # Keep first of day, then last (per_day-1) samples of the day.
+            out.append(group[0])
+            out.extend(group[-(per_day - 1) :])
+    return out
+
+
+def _trim_samples_by_days(
+    samples: list[dict], days: int, *, now: datetime | None = None
+) -> list[dict]:
+    """Drop samples older than `days` (keep first_seen on the entry separately)."""
+    if days < 1 or not samples:
+        return samples
+    now = now or datetime.now(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    cutoff = now.timestamp() - (days * 86400)
+    kept: list[dict] = []
+    for s in samples:
+        ts = str(s.get("ts") or "")
+        try:
+            if ts.endswith("Z"):
+                ts = ts[:-1] + "+00:00"
+            dt = datetime.fromisoformat(ts)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt.timestamp() >= cutoff:
+                kept.append(s)
+        except ValueError:
+            kept.append(s)
+    return kept
+
+
 def update_history(risks: list[DiskRisk]) -> dict[str, Any]:
-    """Record numeric finding values and annotate findings with trend."""
+    """Record numeric finding values and annotate findings with trend.
+
+    Retention: SMART_RISK_HISTORY_DAYS (default 365), max SMART_RISK_HISTORY_PER_DAY
+    points per calendar day (default 2), hard cap SMART_RISK_HISTORY_SAMPLES.
+    """
     hist = load_history()
     attrs: dict[str, Any] = hist.setdefault("attrs", {})
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    now_dt = datetime.now(timezone.utc)
+    now = now_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
     for r in risks:
         for f in r.findings:
@@ -585,14 +693,26 @@ def update_history(risks: list[DiskRisk]) -> dict[str, Any]:
             }
             samples: list[dict] = list(entry.get("samples") or [])
             last = samples[-1] if samples else None
-            # Store when value changes, or at least once per calendar day.
             day = now[:10]
-            if last is None or last.get("value") != cur or str(last.get("ts", ""))[:10] != day:
+            # New day, value change, or no samples yet → record.
+            if (
+                last is None
+                or last.get("value") != cur
+                or _sample_day(last.get("ts")) != day
+            ):
                 samples.append({"ts": now, "value": cur})
-            samples = samples[-HISTORY_MAX_SAMPLES:]
+            samples = _cap_samples_per_day(samples, HISTORY_PER_DAY)
+            samples = _trim_samples_by_days(samples, HISTORY_DAYS, now=now_dt)
+            if len(samples) > HISTORY_MAX_SAMPLES:
+                samples = samples[-HISTORY_MAX_SAMPLES:]
+            if not samples:
+                samples = [{"ts": now, "value": cur}]
             entry["samples"] = samples
-            entry["first_value"] = entry.get("first_value", samples[0]["value"])
-            entry["first_seen"] = entry.get("first_seen") or samples[0]["ts"]
+            # Preserve original baseline even if early samples aged out of the window.
+            if entry.get("first_value") is None:
+                entry["first_value"] = samples[0]["value"]
+            if not entry.get("first_seen"):
+                entry["first_seen"] = samples[0]["ts"]
             entry["system"] = r.system
             entry["device"] = r.name
             entry["serial"] = r.serial
@@ -620,6 +740,8 @@ def update_history(risks: list[DiskRisk]) -> dict[str, Any]:
                 f.note = (f.note + "; " if f.note else "") + "growing"
 
     hist["updated"] = now
+    hist["history_days"] = HISTORY_DAYS
+    hist["history_per_day"] = HISTORY_PER_DAY
     save_history(hist)
     return hist
 
@@ -630,12 +752,26 @@ def build_report() -> dict[str, Any]:
     devices = beszel_records(token, "smart_devices")
     scr = scrutiny_status_by_serial()
     topo = load_topology()
+    smart_idx = load_smart_index(SMART_DIR) if RISK_ENGINE in ("hybrid", "stats") else {}
 
-    risks: list[DiskRisk] = []
-    clean: list[CleanDisk] = []
+    staged: list[DiskRisk] = []
     for d in devices:
-        findings = evaluate_attrs(d.get("attributes") or [])
         serial = (d.get("serial") or "").strip()
+        ns = _norm_serial(serial)
+        extra = None
+        if smart_idx:
+            extra = smart_idx.get(ns)
+            if extra is None and ns:
+                for k, v in smart_idx.items():
+                    if ns.startswith(k) or k.startswith(ns):
+                        if min(len(ns), len(k)) >= 8:
+                            extra = v
+                            break
+        findings, classic = evaluate_attrs(
+            d.get("attributes") or [],
+            engine=RISK_ENGINE,
+            smart_extra=extra,
+        )
         risk = DiskRisk(
             system=systems.get(d.get("system"), d.get("system") or "?"),
             name=d.get("name") or "",
@@ -643,12 +779,35 @@ def build_report() -> dict[str, Any]:
             model=d.get("model") or "",
             state=d.get("state") or "",
             findings=findings,
+            classic_findings=classic,
             scrutiny_status=scr.get(serial) if serial else None,
             topology=_lookup_topology(topo, serial),
         )
         if risk.scrutiny_status is None and serial:
             risk.scrutiny_status = scr.get(_norm_serial(serial))
-        if risk.severity or risk.findings:
+        staged.append(risk)
+
+    # History for every disk that has signals (incl. advisory info) so MultiZone can trend.
+    hist_targets = [r for r in staged if r.findings]
+    update_history(hist_targets)
+
+    if RISK_ENGINE in ("hybrid", "stats"):
+        for r in staged:
+            refine_after_trend(r.findings)
+
+    risks: list[DiskRisk] = []
+    clean: list[CleanDisk] = []
+    for risk in staged:
+        actionable = (
+            [f for f in risk.findings if is_actionable_finding(f)]
+            if RISK_ENGINE in ("hybrid", "stats")
+            else list(risk.findings)
+        )
+        keep = bool(actionable) or (risk.scrutiny_status or 0) >= 1
+        if keep:
+            if RISK_ENGINE in ("hybrid", "stats"):
+                # Drop historical/advisory scars even if Scrutiny keeps the disk listed.
+                risk.findings = actionable
             risks.append(risk)
         else:
             clean.append(
@@ -662,11 +821,15 @@ def build_report() -> dict[str, Any]:
                 )
             )
 
-    update_history(risks)
     risks.sort(key=lambda r: (-int(r.any_growing), -r.severity, r.system, r.serial))
     clean.sort(key=lambda c: (c.system, c.serial or c.name))
 
     growing_count = sum(1 for r in risks if r.any_growing)
+    policy = policy_settings()
+    policy["engine"] = RISK_ENGINE  # authoritative after validation
+    policy["history_days"] = HISTORY_DAYS
+    policy["history_per_day"] = HISTORY_PER_DAY
+    policy["history_max_samples"] = HISTORY_MAX_SAMPLES
     return {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
         "total_devices": len(devices),
@@ -677,6 +840,10 @@ def build_report() -> dict[str, Any]:
         "scrutiny_flagged": sum(1 for r in risks if (r.scrutiny_status or 0) >= 2),
         "history_path": str(HISTORY_PATH),
         "topology_path": str(TOPOLOGY_DIR),
+        "smart_path": str(SMART_DIR),
+        "smart_overlays": len(smart_idx),
+        "engine": RISK_ENGINE,
+        "policy": policy,
         "topology_mapped": sum(1 for r in risks if r.topology) + sum(1 for c in clean if c.topology),
     }
 
@@ -684,9 +851,20 @@ def build_report() -> dict[str, Any]:
 def _trend_label(f: Finding) -> str:
     if f.growing:
         return "GROWING"
-    if f.samples >= 2 and (f.delta_total or 0) == 0:
-        return "stable"
-    return "baseline"
+    if f.samples < 2 and f.first_value is None:
+        return "baseline"
+    if f.samples < 2:
+        return "baseline"
+    return "stable"
+
+
+def _stable_counter_label(f: Finding) -> str | None:
+    """e.g. '16d/14d' when watching a scar window."""
+    if f.growing:
+        return None
+    if f.stable_days is None or f.scar_need_days is None:
+        return None
+    return f"{f.stable_days}d/{f.scar_need_days}d"
 
 
 def _fmt_delta(n: int | None) -> str:
@@ -700,9 +878,11 @@ def _fmt_delta(n: int | None) -> str:
 def _finding_trend(f: Finding) -> str:
     """Compact one-liner for text/JSON consumers."""
     short = SHORT.get(f.name, f.name)
+    scar = _stable_counter_label(f)
+    scar_bit = f" scar={scar}" if scar else ""
     return (
         f"{short} now={f.value} base={f.first_value if f.first_value is not None else '—'} "
-        f"Δ={_fmt_delta(f.delta_total)} [{_trend_label(f)}]"
+        f"Δ={_fmt_delta(f.delta_total)} [{_trend_label(f)}{scar_bit}]"
     )
 
 
@@ -767,31 +947,52 @@ def _finding_attr_row(r: DiskRisk, f: Finding) -> str:
     trend = _trend_label(f)
     trend_cls = {"GROWING": "growing", "stable": "stable", "baseline": "base"}[trend]
     trend_help = TREND_HELP.get(trend, trend)
+    scar_ctr = _stable_counter_label(f)
+    if scar_ctr:
+        need = f.scar_need_days
+        got = f.stable_days
+        trend_help = (
+            f"{trend_help} Scar window: {got}d stable of {need}d needed "
+            f"(no increase). At {need}d this drops off the risk list."
+        )
+        if trend == "stable":
+            trend = f"stable {scar_ctr}"
     lvl = "growing" if f.growing else f.level
+    kind = f.kind or ""
     payload = html.escape(json.dumps(_history_payload(r, f), ensure_ascii=False), quote=True)
     hist_btn = (
         f'<button type="button" class="hist-btn" data-hist="{payload}" '
         f'title="Open history: when this value appeared and how it changed">'
         f"Hist</button>"
     )
+    kind_chip = ""
+    if kind and kind != "media":
+        kind_chip = (
+            f' {_chip("kind", kind, STATUS_HELP.get(kind, kind), kind=kind)}'
+        )
     return (
         f'<tr class="attr {lvl}">'
-        f'<td class="attr-name">{_chip(lvl, short, help_text)}</td>'
+        f'<td class="attr-name">{_chip(lvl, short, help_text, kind=kind)}{kind_chip}</td>'
         f'<td class="num" title="{html.escape(help_text, quote=True)}">'
         f"{html.escape(str(f.value))}</td>"
         f'<td class="num">{html.escape(str(f.first_value if f.first_value is not None else "—"))}</td>'
         f'<td class="num">{html.escape(_fmt_delta(f.delta_total))}</td>'
         f'<td class="num">{html.escape(_fmt_delta(f.delta_prev))}</td>'
         f'<td class="trend"><span class="badge {trend_cls}" title="{html.escape(trend_help, quote=True)}">'
-        f"{trend}</span></td>"
+        f"{html.escape(trend)}</span></td>"
         f'<td class="hist">{hist_btn}</td>'
         f"</tr>"
     )
 
 
 def render_text(report: dict[str, Any]) -> str:
+    policy = _policy_from_report(report)
     lines = [
         f"{PRODUCT_NAME} — {report['generated']}",
+        f"engine={policy.get('engine', RISK_ENGINE)}  "
+        f"interface_scar≥{policy.get('interface_historical_days')}d  "
+        f"media_scar≥{policy.get('media_scar_historical_days')}d  "
+        f"history≤{policy.get('history_days')}d×{policy.get('history_per_day')}/day  "
         f"Devices: {report['total_devices']}  clean: {report['clean']}  "
         f"with findings: {len(report['risks'])}  growing: {report.get('growing_count', 0)}  "
         f"Scrutiny device_status≥2: {report['scrutiny_flagged']}",
@@ -807,7 +1008,10 @@ def render_text(report: dict[str, Any]) -> str:
         )
         for f in r.findings:
             note = f" ({f.note})" if f.note else ""
-            lines.append(f"  {f.level:8} {_finding_trend(f)}{note}")
+            kind = f" [{f.kind}]" if getattr(f, "kind", None) else ""
+            lines.append(
+                f"  {f.level:8} {_finding_trend(f)}{kind}{note}"
+            )
         if not r.findings and (r.scrutiny_status or 0) >= 2:
             lines.append("  critical Scrutiny device_status flagged (see Scrutiny UI)")
         lines.append("")
@@ -828,6 +1032,8 @@ def _serialize_finding(f: Finding) -> dict[str, Any]:
         "name": f.name,
         "value": f.value,
         "note": f.note,
+        "kind": f.kind,
+        "source": f.source,
         "first_value": f.first_value,
         "prev_value": f.prev_value,
         "delta_total": f.delta_total,
@@ -836,6 +1042,8 @@ def _serialize_finding(f: Finding) -> dict[str, Any]:
         "first_seen": f.first_seen,
         "samples": f.samples,
         "history": f.history,
+        "stable_days": f.stable_days,
+        "scar_need_days": f.scar_need_days,
     }
 
 
@@ -856,7 +1064,7 @@ def _serialize_topo(t: TopologyInfo | None) -> dict[str, Any] | None:
 
 
 def _serialize_risk(r: DiskRisk) -> dict[str, Any]:
-    return {
+    out: dict[str, Any] = {
         "system": r.system,
         "name": r.name,
         "serial": r.serial,
@@ -868,6 +1076,18 @@ def _serialize_risk(r: DiskRisk) -> dict[str, Any]:
         "findings": [_serialize_finding(f) for f in r.findings],
         "topology": _serialize_topo(r.topology),
     }
+    if r.classic_findings:
+        out["classic_findings"] = [
+            {
+                "level": f.level,
+                "name": f.name,
+                "value": f.value,
+                "note": f.note,
+                "kind": f.kind,
+            }
+            for f in r.classic_findings
+        ]
+    return out
 
 
 def _serialize_clean(c: CleanDisk) -> dict[str, Any]:
@@ -881,7 +1101,19 @@ def _serialize_clean(c: CleanDisk) -> dict[str, Any]:
     }
 
 
+def _policy_from_report(report: dict[str, Any]) -> dict[str, Any]:
+    p = dict(report.get("policy") or {})
+    p.setdefault("engine", report.get("engine") or RISK_ENGINE)
+    p.setdefault("interface_historical_days", interface_historical_days())
+    p.setdefault("media_scar_historical_days", media_scar_historical_days())
+    p.setdefault("history_days", HISTORY_DAYS)
+    p.setdefault("history_per_day", HISTORY_PER_DAY)
+    p.setdefault("history_max_samples", HISTORY_MAX_SAMPLES)
+    return p
+
+
 def serialize_report(report: dict[str, Any]) -> dict[str, Any]:
+    policy = _policy_from_report(report)
     return {
         "generated": report["generated"],
         "total_devices": report["total_devices"],
@@ -890,7 +1122,11 @@ def serialize_report(report: dict[str, Any]) -> dict[str, Any]:
         "scrutiny_flagged": report["scrutiny_flagged"],
         "history_path": report.get("history_path"),
         "topology_path": report.get("topology_path"),
+        "smart_path": report.get("smart_path"),
+        "smart_overlays": report.get("smart_overlays", 0),
         "topology_mapped": report.get("topology_mapped", 0),
+        "engine": policy.get("engine", RISK_ENGINE),
+        "policy": policy,
         "risks": [_serialize_risk(r) for r in report["risks"]],
         "clean_disks": [_serialize_clean(c) for c in report.get("clean_disks") or []],
     }
@@ -977,8 +1213,11 @@ def _disk_finding_chips(disk: Any, is_risk: bool, limit: int = 4) -> str:
         short = SHORT.get(f.name, f.name)
         arrow = "↑" if f.growing else ""
         lvl = "growing" if f.growing else f.level
+        kind = getattr(f, "kind", "") or ""
         help_text = f"{short} ({f.name}): {_attr_help(f.name)}"
-        parts.append(_chip(lvl, f"{short}={f.value}{arrow}", help_text))
+        if kind:
+            help_text = f"[{kind}] {help_text}"
+        parts.append(_chip(lvl, f"{short}={f.value}{arrow}", help_text, kind=kind))
     return " ".join(parts)
 
 
@@ -1392,6 +1631,12 @@ def render_html(report: dict[str, Any]) -> str:
     print_html = _render_print_sheet(report)
     footer_html = _site_footer_html()
     mapped = int(report.get("topology_mapped") or 0)
+    policy = _policy_from_report(report)
+    iface_d = int(policy.get("interface_historical_days") or 14)
+    media_d = int(policy.get("media_scar_historical_days") or 30)
+    hist_d = int(policy.get("history_days") or HISTORY_DAYS)
+    hist_pd = int(policy.get("history_per_day") or HISTORY_PER_DAY)
+    eng = html.escape(str(policy.get("engine") or RISK_ENGINE))
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1527,7 +1772,12 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
 .chip.warn {{ background: rgba(176,122,0,.14); color: #8a5f00; }}
 .chip.info {{ background: rgba(0,125,138,.1); color: #005f69; }}
 .chip.ok {{ background: rgba(47,122,85,.12); color: #2f7a55; }}
-.chip.kind {{ background: rgba(0,125,138,.12); color: #005f69; text-transform: uppercase; letter-spacing: .04em; }}
+.chip.kind {{ background: rgba(90,90,90,.1); color: #444; text-transform: uppercase;
+  letter-spacing: .04em; font-size: .65rem; font-weight: 700; margin-left: .25rem; }}
+.chip.kind-media {{ box-shadow: inset 3px 0 0 #c23b2e; }}
+.chip.kind-interface {{ box-shadow: inset 3px 0 0 #b07a00; }}
+.chip.kind-advisory {{ box-shadow: inset 3px 0 0 #007d8a; }}
+.chip.kind-status {{ box-shadow: inset 3px 0 0 #6b4c9a; }}
 .badge {{ display: inline-block; margin-left: .35rem; padding: .05rem .35rem; border-radius: 6px;
   font-size: .68rem; font-weight: 700; letter-spacing: .03em; vertical-align: middle; cursor: help; }}
 .badge.grow, .badge.growing {{ background: rgba(196,74,50,.18); color: #8a3222; }}
@@ -1734,13 +1984,18 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
   </header>
   <p class="meta">
     {html.escape(report['generated'])} ·
+    engine=<strong>{eng}</strong> ·
+    policy: UDMA/interface ≥<strong>{iface_d}d</strong> ·
+    GrownDefect/Realloc ≥<strong>{media_d}d</strong> ·
+    history ≤<strong>{hist_d}d</strong> (≤{hist_pd}/day) ·
     {report['total_devices']} disks ·
     {len(report['risks'])} with findings ·
     <strong>{report.get('growing_count', 0)} growing</strong> ·
     {report['clean']} clean ·
     Scrutiny status≥2: {report['scrutiny_flagged']} ·
     topology mapped: {mapped}<br/>
-    Source: Beszel attributes{(' + Scrutiny' if SCRUTINY_URL else '')} ·
+    Source: Beszel attributes{(' + Scrutiny' if SCRUTINY_URL else '')}
+    {(' · smart overlays: ' + str(report.get('smart_overlays') or 0)) if report.get('engine') == 'stats' or (report.get('smart_overlays') or 0) else ''} ·
     <a href="/json">JSON</a> ·
     <a href="/text">text</a> ·
     <a href="/history">history</a>
@@ -1780,11 +2035,24 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
     same as baseline,
     <span class="badge grow">GROWING</span> =
     acute — the value increased).<br/><br/>
-    <strong>Critical:</strong> Realloc / Pending / OfflineUnc / GrownDefect etc. —
-    <strong>Warn:</strong> UDMA_CRC (cable/HBA), MultiZone —
-    Seagate Raw_Read / Seek are flagged only if norm ≤ thresh.<br/>
+    <strong>Signal kinds:</strong>
+    <span class="chip critical kind-media">media</span> Pending / OfflineUnc (always acute);
+    GrownDefect / Realloc (GROWING = critical; stable ≥{media_d}d = historical scar) —
+    <span class="chip warn kind-interface">interface</span> UDMA_CRC / timeouts
+    (GROWING = path noise; no increase ≥{iface_d}d = historical scar, not a fault) —
+    <span class="chip info kind-advisory">advisory</span> MultiZone etc.
+    (<strong>MultiZone advisory ≠ FAIL</strong>; hybrid keeps stable scars off the risk list).<br/>
+    <strong>Policy (config):</strong>
+    engine=<code>{eng}</code>
+    · <code>DISKRISK_INTERFACE_HISTORICAL_DAYS={iface_d}</code>
+    · <code>DISKRISK_MEDIA_SCAR_HISTORICAL_DAYS={media_d}</code>
+    · <code>SMART_RISK_HISTORY_DAYS={hist_d}</code>
+    · <code>SMART_RISK_HISTORY_PER_DAY={hist_pd}</code>
+    · <code>DISKRISK_RISK_ENGINE=classic|hybrid|stats</code>.
+    Seagate Raw_Read / Seek flagged only if norm ≤ thresh.<br/>
     History: <code>{html.escape(str(report.get('history_path') or ''))}</code>.
-    Topology dir: <code>{html.escape(str(report.get('topology_path') or ''))}</code>.
+    Topology: <code>{html.escape(str(report.get('topology_path') or ''))}</code>.
+    Smart overlays: <code>{html.escape(str(report.get('smart_path') or ''))}</code>.
   </p>
   </div>
 
