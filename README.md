@@ -18,9 +18,9 @@ When a disk starts to fail you usually need three answers at once:
 
 1. **Which drive is it?** — not `sdf`, but a stable **serial** you can read on
    the label when you are standing in front of the rack.
-2. **Who shares its vdev?** — mirror partner, or the other disks in the same
-   `raidz2-N` / `draid-N`. Several bad disks in **one** vdev is much worse than
-   the same count spread across vdevs.
+2. **Who shares its failure domain?** — mirror partner, other disks in the same
+   `raidz2-N` / mdadm array, or mergerfs/snapraid peers. Several bad disks in
+   **one** group is much worse than the same count spread across groups.
 3. **Is it getting worse?** — SMART often still says **PASSED** while pending
    sectors or a grown-defect list are already climbing.
 
@@ -30,16 +30,18 @@ redundancy. Diskrisk + `diskinfo` close that gap:
 
 | Tool | Job | Needs Diskrisk? |
 |------|-----|-----------------|
-| **diskinfo** (CLI on the NAS) | Print the pool as a **vdev tree** (mirror / raidz / draid): device → **serial** | **No** — works alone |
-| **Diskrisk** (web / `/json`) | Rank disks by actionable SMART risk and **trend**; **Disk list** / **Topology** / **Print sheet** | — |
-| **diskinfo --risk** | Same tree **+** SMART/RISK columns from Diskrisk | Optional enrichment |
+| **diskinfo** (CLI on the NAS) | Print the **ZFS** pool as a vdev tree (mirror / raidz / draid) + **other / standalone** disks: device → **serial** | **No** — works alone |
+| **Diskrisk** (web / `/json`) | Rank disks by SMART risk and **trend**; **Disk list** / **Topology** / **Print sheet** | — |
+| **topology_collect.py** | Per-host map: **ZFS**, **mdadm** Linux RAID, **mergerfs** (+ snapraid roles) → JSON for Topology | Optional input to Diskrisk |
+| **diskinfo --risk** | Same ZFS/standalone tree **+** SMART/RISK from Diskrisk | Optional enrichment |
 
 Typical workflow: open Diskrisk (or `diskinfo --risk`), note the serial with
 `GrownDefect=815↑` / `Pending=…`, walk to the chassis, match the sticker, replace
 that drive — and check that its mirror partner is still clean (`.`).
 
 Even without Diskrisk, `diskinfo` alone answers “which serial is in `mirror-1`
-/ `raidz2-0`?”.
+/ `raidz2-0`?”. For **mdadm / mergerfs**, use Diskrisk **Topology** (after
+running `topology_collect.py` on that host).
 
 **Before a disk ever joins the pool**, burn it in (SMART short → long →
 badblocks → long again) so you have a **pre/post SMART** baseline. See
