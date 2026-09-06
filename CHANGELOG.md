@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.3.1] — 2026-09-06
+
+### Diskrisk
+- Hover tooltips on risk chips (GrownDefect, UDMA_CRC, MultiZone, …) with plain-language meaning
+- Same for GROWING/stable/baseline badges and topology status chips
+
 ## [1.3.0] — 2026-09-06
 
 ### Diskrisk
@@ -43,6 +49,7 @@ LLM assistants — see [AI.md](AI.md).
 - Trend history (baseline / Now / GROWING)
 - Git-based install (`install.sh` / `update.sh`) with config under `/etc/diskrisk/`
 
+[1.3.1]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.1
 [1.3.0]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.0
 [1.2.2]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.2
 [1.2.1]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.1

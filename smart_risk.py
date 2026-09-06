@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-__version__ = "1.3.0"
+__version__ = "1.3.1"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
@@ -147,6 +147,109 @@ SHORT = {
     "Raw_Read_Error_Rate": "RawRead",
     "Seek_Error_Rate": "SeekErr",
 }
+
+# Plain-language hover text for attribute chips (and related badges).
+ATTR_HELP = {
+    "Reallocated_Sector_Ct": (
+        "Reallocated sectors: the drive remapped bad sectors to spare area. "
+        "Non-zero means media damage; GROWING means it is still getting worse."
+    ),
+    "Current_Pending_Sector": (
+        "Pending sectors: sectors that failed read and are waiting to be remapped. "
+        "Acute risk — often the strongest early warning of a dying disk."
+    ),
+    "Offline_Uncorrectable": (
+        "Offline uncorrectable: sectors that could not be read even offline. "
+        "Data may already be lost on those blocks."
+    ),
+    "Reported_Uncorrect": (
+        "Reported uncorrectable: read/write errors the drive could not correct. "
+        "Treat like OfflineUnc — plan replacement if growing."
+    ),
+    "Reallocated_Event_Count": (
+        "Reallocation events: how many times remapping happened (not sector count). "
+        "Rising events mean ongoing remaps."
+    ),
+    "Spin_Retry_Count": (
+        "Spin retries: the spindle failed to spin up and had to retry. "
+        "Often power, cable, or mechanical wear."
+    ),
+    "End-to-End_Error": (
+        "End-to-end (E2E) errors: data integrity mismatch between host and drive cache. "
+        "Can be drive firmware or path issues."
+    ),
+    "Runtime_Bad_Block": (
+        "Runtime bad block: bad block detected during operation. "
+        "Media problem — watch for growth."
+    ),
+    "GrownDefectList": (
+        "Grown defect list (SAS): defects found after manufacturing. "
+        "A scar can sit stable for years; GROWING (↑) means new defects are appearing now."
+    ),
+    "ReadTotalUncorrectedErrors": (
+        "Uncorrected read errors (SAS): reads that failed permanently. "
+        "Rising values threaten readable data."
+    ),
+    "WriteTotalUncorrectedErrors": (
+        "Uncorrected write errors (SAS): writes that failed permanently. "
+        "Rising values threaten stored data."
+    ),
+    "VerifyTotalUncorrectedErrors": (
+        "Uncorrected verify errors (SAS): verify/check commands that failed. "
+        "Often appears with other media errors."
+    ),
+    "UDMA_CRC_Error_Count": (
+        "UDMA CRC: checksum errors on the cable/HBA path (not always the platter). "
+        "Often a loose cable, bad port, or backplane — reseat before condemning the disk. "
+        "GROWING still means the link is noisy right now."
+    ),
+    "Multi_Zone_Error_Rate": (
+        "Multi-Zone error rate (often WD): soft error / zone noise counter. "
+        "Warn-level alone can be historical; GROWING deserves a closer look with Pending/Realloc."
+    ),
+    "Command_Timeout": (
+        "Command timeouts: the drive did not answer in time. "
+        "Can be load, cable, enclosure, or a disk starting to stall."
+    ),
+    "Raw_Read_Error_Rate": (
+        "Raw read error rate: Seagate raw values are often noisy and not counted as failures here "
+        "unless the normalized value has crossed the manufacturer threshold."
+    ),
+    "Seek_Error_Rate": (
+        "Seek error rate: head positioning noise. Seagate raw is noisy; "
+        "only flagged here if normalized value crossed the threshold."
+    ),
+}
+
+TREND_HELP = {
+    "GROWING": "Value increased since baseline — acute change, prioritize this disk.",
+    "stable": "Same as the first recorded baseline — often an old scar, not an active climb.",
+    "baseline": "First sample in history — no trend yet; wait for more samples.",
+}
+
+STATUS_HELP = {
+    "clean": "No actionable SMART risk attributes on this disk.",
+    "ok": "No elevated severity for this row.",
+    "risk": "Critical SMART attributes present (Pending, Realloc, GrownDefect, …).",
+    "warn": "Warn-level attributes (often cable/bus noise like UDMA_CRC or MultiZone).",
+    "GROWING": "At least one risk attribute is still climbing versus baseline.",
+    "Scrutiny flagged": (
+        "Scrutiny device_status ≥ 2 for this serial — open Scrutiny for details. "
+        "Independent of Beszel SMART attributes."
+    ),
+}
+
+
+def _attr_help(name: str) -> str:
+    return ATTR_HELP.get(name, f"SMART attribute: {name}")
+
+
+def _chip(level: str, label: str, help_text: str) -> str:
+    """Risk/status chip with native browser tooltip (title)."""
+    return (
+        f'<span class="chip {html.escape(level)}" '
+        f'title="{html.escape(help_text, quote=True)}">{html.escape(label)}</span>'
+    )
 
 
 @dataclass
@@ -600,23 +703,28 @@ def _finding_trend(f: Finding) -> str:
 
 def _finding_attr_row(f: Finding) -> str:
     """HTML row for one risk attribute with visible trend columns."""
-    short = html.escape(SHORT.get(f.name, f.name))
-    title = html.escape(
-        f.name
-        + (f" — {f.note}" if f.note else "")
-        + (f" · first_seen={f.first_seen}" if f.first_seen else "")
-    )
+    short = SHORT.get(f.name, f.name)
+    help_text = _attr_help(f.name)
+    if f.note:
+        help_text = f"{help_text} [{f.note}]"
+    if f.first_seen:
+        help_text = f"{help_text} · first seen {f.first_seen}"
+    # Keep full attr name in tooltip for power users.
+    help_text = f"{short} ({f.name}): {help_text}"
     trend = _trend_label(f)
     trend_cls = {"GROWING": "growing", "stable": "stable", "baseline": "base"}[trend]
+    trend_help = TREND_HELP.get(trend, trend)
     lvl = "growing" if f.growing else f.level
     return (
-        f'<tr class="attr {lvl}" title="{title}">'
-        f'<td class="attr-name"><span class="chip {lvl}">{short}</span></td>'
-        f'<td class="num">{html.escape(str(f.value))}</td>'
+        f'<tr class="attr {lvl}">'
+        f'<td class="attr-name">{_chip(lvl, short, help_text)}</td>'
+        f'<td class="num" title="{html.escape(help_text, quote=True)}">'
+        f"{html.escape(str(f.value))}</td>"
         f'<td class="num">{html.escape(str(f.first_value if f.first_value is not None else "—"))}</td>'
         f'<td class="num">{html.escape(_fmt_delta(f.delta_total))}</td>'
         f'<td class="num">{html.escape(_fmt_delta(f.delta_prev))}</td>'
-        f'<td><span class="badge {trend_cls}">{trend}</span></td>'
+        f'<td><span class="badge {trend_cls}" title="{html.escape(trend_help, quote=True)}">'
+        f"{trend}</span></td>"
         f"</tr>"
     )
 
@@ -729,15 +837,15 @@ def serialize_report(report: dict[str, Any]) -> dict[str, Any]:
 
 def _disk_risk_chip(r: DiskRisk | CleanDisk, is_risk: bool) -> str:
     if not is_risk:
-        return '<span class="chip ok">clean</span>'
+        return _chip("ok", "clean", STATUS_HELP["clean"])
     assert isinstance(r, DiskRisk)
     if r.any_growing:
-        return '<span class="chip growing">GROWING</span>'
+        return _chip("growing", "GROWING", STATUS_HELP["GROWING"])
     if r.severity >= 2:
-        return '<span class="chip critical">risk</span>'
+        return _chip("critical", "risk", STATUS_HELP["risk"])
     if r.severity == 1:
-        return '<span class="chip warn">warn</span>'
-    return '<span class="chip ok">ok</span>'
+        return _chip("warn", "warn", STATUS_HELP["warn"])
+    return _chip("ok", "ok", STATUS_HELP["ok"])
 
 
 def _render_topology_view(report: dict[str, Any]) -> str:
@@ -796,12 +904,15 @@ def _render_topology_view(report: dict[str, Any]) -> str:
                     findings = ""
                     if is_risk and getattr(disk, "findings", None):
                         parts = []
-                        for f in disk.findings[:3]:
+                        for f in disk.findings[:4]:
                             short = SHORT.get(f.name, f.name)
                             arrow = "↑" if f.growing else ""
-                            parts.append(f"{short}={f.value}{arrow}")
+                            lvl = "growing" if f.growing else f.level
+                            help_text = _attr_help(f.name)
+                            help_text = f"{short} ({f.name}): {help_text}"
+                            parts.append(_chip(lvl, f"{short}={f.value}{arrow}", help_text))
                         if parts:
-                            findings = f' <span class="muted">{" ".join(html.escape(p) for p in parts)}</span>'
+                            findings = " " + " ".join(parts)
                     blocks.append(
                         "<li>"
                         f"{chip} <code>{html.escape(disk.serial or disk.name)}</code>"
@@ -869,17 +980,28 @@ def render_html(report: dict[str, Any]) -> str:
                 + "</tbody></table>"
             )
         elif (r.scrutiny_status or 0) >= 2:
-            attr_table = '<span class="chip critical">Scrutiny flagged</span>'
+            attr_table = _chip("critical", "Scrutiny flagged", STATUS_HELP["Scrutiny flagged"])
         else:
             attr_table = '<span class="muted">—</span>'
         scr = "—" if r.scrutiny_status is None else str(r.scrutiny_status)
-        badge = ' <span class="badge grow">GROWING</span>' if r.any_growing else ""
+        badge = ""
+        if r.any_growing:
+            badge += (
+                f' <span class="badge grow" title="{html.escape(STATUS_HELP["GROWING"], quote=True)}">'
+                f"GROWING</span>"
+            )
         if (not r.any_growing) and any(
             f.samples >= 2 and (f.delta_total or 0) == 0 for f in r.findings
         ):
-            badge += ' <span class="badge stable">stable</span>'
+            badge += (
+                f' <span class="badge stable" title="{html.escape(TREND_HELP["stable"], quote=True)}">'
+                f"stable</span>"
+            )
         elif (not r.any_growing) and r.findings and all(f.samples < 2 for f in r.findings):
-            badge += ' <span class="badge base">baseline</span>'
+            badge += (
+                f' <span class="badge base" title="{html.escape(TREND_HELP["baseline"], quote=True)}">'
+                f"baseline</span>"
+            )
         topo_sub = ""
         if r.topology and r.topology.summary:
             peer = html.escape(r.topology.peer_note)
@@ -1069,14 +1191,14 @@ table.attrs th, table.attrs td {{
 table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 .chip {{
   display: inline-block; padding: .1rem .4rem; border-radius: 999px;
-  font-size: .72rem; font-weight: 600; }}
+  font-size: .72rem; font-weight: 600; cursor: help; }}
 .chip.critical, .chip.growing {{ background: rgba(194,59,46,.12); color: var(--crit); }}
 .chip.warn {{ background: rgba(176,122,0,.14); color: #8a5f00; }}
 .chip.info {{ background: rgba(0,125,138,.1); color: #005f69; }}
 .chip.ok {{ background: rgba(47,122,85,.12); color: #2f7a55; }}
 .chip.kind {{ background: rgba(0,125,138,.12); color: #005f69; text-transform: uppercase; letter-spacing: .04em; }}
 .badge {{ display: inline-block; margin-left: .35rem; padding: .05rem .35rem; border-radius: 6px;
-  font-size: .68rem; font-weight: 700; letter-spacing: .03em; vertical-align: middle; }}
+  font-size: .68rem; font-weight: 700; letter-spacing: .03em; vertical-align: middle; cursor: help; }}
 .badge.grow, .badge.growing {{ background: rgba(196,74,50,.18); color: #8a3222; }}
 .badge.stable {{ background: rgba(47,122,85,.14); color: #2f7a55; }}
 .badge.base {{ background: rgba(0,125,138,.12); color: #005f69; }}
