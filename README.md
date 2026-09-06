@@ -95,10 +95,17 @@ and secrets belong only in `config.env` (gitignored / under `/etc`).
 
 ### Prerequisites
 
-1. **Beszel hub** reachable (Diskrisk reads its SMART API).  
-2. **Optional:** Scrutiny (`SCRUTINY_URL`).  
-3. **diskinfo:** a host with ZFS (`zpool status`) — install the CLI there too
-   (or the whole checkout) and set `SMART_RISK_URL` to your Diskrisk `/json`.
+**Diskrisk (web / `/json`)**
+
+1. **Beszel hub** reachable (SMART attributes API).  
+2. **Optional:** Scrutiny (`SCRUTINY_URL`) for the Scrutiny column.  
+3. **Optional:** topology JSON from `topology_collect.py` (ZFS, mdadm, mergerfs, …) for the Topology / Print views.
+
+**diskinfo (CLI)** — separate from the service; usually run on the storage host.
+
+1. Linux + `lsblk` (always).  
+2. **ZFS userland (`zpool`)** only if you want the **pool vdev tree** (mirror / raidz / draid). Without ZFS you still get the **other / standalone** section (ext4, btrfs, xfs, EMPTY, …).  
+3. **Optional:** `SMART_RISK_URL` → Diskrisk `/json` (or `diskinfo --risk`) for SMART/RISK columns. Core listing works without Diskrisk.
 
 ## Install / update (recommended)
 
@@ -142,13 +149,14 @@ sudo ./update.sh          # git pull --ff-only + refresh unit/symlinks + restart
 
 ### diskinfo only (no Diskrisk service)
 
-On a ZFS NAS you can install **just** the CLI — no Beszel, no Python service:
+On a storage host you can install **just** the CLI — no Beszel, no Python service:
 
 ```bash
 sudo git clone https://github.com/nonifo/diskrisk.git /opt/diskrisk
 cd /opt/diskrisk
 sudo ./install.sh --diskinfo-only
-diskinfo                  # ZFS vdev tree (default pool: tank)
+diskinfo                  # pool vdev tree if ZFS is present (default pool: tank)
+                          # + other / standalone disks (ext4, btrfs, …)
 diskinfo --risk           # optional: enrich if Diskrisk is reachable
 ```
 
@@ -196,8 +204,8 @@ Diskrisk is meant for **one hub, many machines**:
 
 The UI **Host** column is the Beszel system name (`storage-01`, `nas-garage`,
 …). Risk and GROWING trends are global across all agents. Run **`diskinfo` on
-each ZFS host** (it needs local `zpool`) and point `SMART_RISK_URL` at the same
-Diskrisk `/json` so RISK columns match the web UI.
+each storage host** (local `lsblk`; `zpool` if you want the ZFS tree) and point
+`SMART_RISK_URL` at the same Diskrisk `/json` so RISK columns match the web UI.
 
 Optional: set `SCRUTINY_URL` if you also run Scrutiny; leave empty to skip.
 
@@ -261,5 +269,5 @@ sudo rm -rf /opt/diskrisk
 
 ## Requirements (summary)
 
-- **Diskrisk:** Python 3.10+, network access to Beszel (and optionally Scrutiny)
-- **diskinfo:** Linux + ZFS userland; same host or any host that can reach Diskrisk `/json`
+- **Diskrisk:** Python 3.10+, network access to Beszel (and optionally Scrutiny). No ZFS required on the Diskrisk host.
+- **diskinfo:** Linux + `lsblk`; **ZFS optional** (needed for the pool vdev tree). Diskrisk `/json` optional for RISK enrichment.
