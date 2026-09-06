@@ -1,6 +1,6 @@
 # Diskrisk
 
-**v1.4.0-rc1** — find the **right physical disk** when something is dying, and see
+**v1.4.0** — find the **right physical disk** when something is dying, and see
 **whether the problem is getting worse**, without chassis LEDs or vendor GUIs.
 Optional hybrid risk engine (`DISKRISK_RISK_ENGINE`) treats MultiZone as advisory
 and UDMA_CRC as interface noise (default remains classic).
@@ -64,7 +64,7 @@ Fictional serials — for illustration only.
 
 ![Diskrisk web UI — disk list](docs/images/diskrisk-ui-demo.png)
 
-*Disk list: multi-host risk with Now / Baseline / GROWING, Hist, pool/vdev under serial (v1.3.7).*
+*Disk list: multi-host risk with Now / Baseline / GROWING, Hist, pool/vdev under serial (v1.4.0).*
 
 ![Diskrisk topology](docs/images/diskrisk-topology-demo.png)
 

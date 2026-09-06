@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-__version__ = "1.4.0-rc6"
+__version__ = "1.4.0"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
