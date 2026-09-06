@@ -47,8 +47,8 @@ Options:
 Environment:
   DESTDIR            Staging root for packaging (prepended to all paths)
 
-diskinfo is standalone: ZFS vdev tree needs only zpool/lsblk. Diskrisk
-enrichment is optional (SMART_RISK_URL / diskinfo --risk).
+diskinfo is standalone: the pool vdev tree needs zpool; other/standalone disks
+need only lsblk. Diskrisk enrichment is optional (SMART_RISK_URL / diskinfo --risk).
 EOF
 }
 
