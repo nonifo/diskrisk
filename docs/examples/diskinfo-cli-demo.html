@@ -8,7 +8,7 @@ body{margin:0;background:#1a1d1e;color:#e8ecec;font:12.5px/1.4 ui-monospace,SFMo
 pre{margin:0;white-space:pre}
 </style></head><body>
 <div class="banner"><strong>Demo screenshot</strong> — fictional serials and values for documentation.</div>
-<pre><span class="b">diskinfo v1.2.0</span>  pool=<strong>tank</strong>  2026-09-06 12:00:00 UTC
+<pre><span class="b">diskinfo v1.2.2</span>  pool=<strong>tank</strong>  2026-09-06 12:00:00 UTC
 Diskrisk: <span class="g">enriched</span> from http://127.0.0.1:8091/json  (↑ = growing since baseline)
 
 <span class="b">ZFS STRUCTURE        DEVICE       SERIAL                       SIZE       RD   WR   CK SMART   RISK                                     PARTUUID</span>
@@ -19,6 +19,10 @@ Diskrisk: <span class="g">enriched</span> from http://127.0.0.1:8091/json  (↑ 
 <span class="g">mirror-1</span>
   <span class="g">ONLINE</span>             /dev/sdf     DEMO-PARTNER-OK              1.8T        0    0    0 PASSED  .                                        c3333333-cccc-4ccc-8ccc-333333333333
   <span class="y">ONLINE</span>             /dev/sdt     DEMO-SERIAL-815A             1.8T        0    0    0 PASSED  <span class="y">GrownDefect=815↑</span>                       d4444444-dddd-4ddd-8ddd-444444444444
+<span class="g">raidz2-0</span>
+  <span class="y">ONLINE</span>             /dev/sdp     DEMO-SERIAL-PEND9            2.7T        0    0    0 PASSED  <span class="y">Pending=9↑ OfflineUnc=3↑</span>               f6666666-ffff-4fff-8fff-666666666666
+  <span class="g">ONLINE</span>             /dev/sdc     DEMO-CLEAN-003               240G        0    0    0 PASSED  .                                        g7777777-gggg-4ggg-8ggg-777777777777
+  <span class="g">ONLINE</span>             /dev/sde     DEMO-RZ-PEER-A               2.7T        0    0    0 PASSED  .                                        h8888888-hhhh-4hhh-8hhh-888888888888
 <span class="g">spares</span>
   <span class="g">AVAIL</span>              /dev/sdw     DEMO-SPARE-002               1.8T        -    -    - PASSED  GrownDefect=2                            e5555555-eeee-4eee-8eee-555555555555
 

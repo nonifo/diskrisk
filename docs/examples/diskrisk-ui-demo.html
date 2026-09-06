@@ -5,65 +5,40 @@
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Diskrisk</title>
 <link rel="icon" type="image/png" sizes="96x96" href="branding/favicon-96x96.png"/>
-<link rel="icon" href="branding/favicon.ico"/>
 <style>
 :root {
-  --ink: #121718;
-  --teal: #007d8a;
-  --paper: #f5f2ea;
-  --bg: var(--paper);
-  --card: #fffcf6;
-  --text: var(--ink);
-  --muted: #536264;
-  --crit: #c23b2e;
-  --warn: #b07a00;
-  --ok: #2f7a55;
-  --grow: #c44a32;
-  --line: rgba(18, 23, 24, 0.14);
+  --ink: #121718; --teal: #007d8a; --paper: #f5f2ea; --card: #fffcf6;
+  --text: var(--ink); --muted: #536264; --crit: #c23b2e; --warn: #b07a00;
+  --ok: #2f7a55; --grow: #c44a32; --line: rgba(18, 23, 24, 0.14);
 }
 * { box-sizing: border-box; }
 body {
-  margin: 0;
-  font: 14px/1.45 ui-sans-serif, system-ui, sans-serif;
-  color: var(--text);
+  margin: 0; font: 14px/1.45 ui-sans-serif, system-ui, sans-serif; color: var(--text);
   padding: 1.5rem;
   background:
     radial-gradient(circle at 16% 12%, rgba(0, 125, 138, 0.16), transparent 29rem),
     linear-gradient(135deg, #ece9df, var(--paper) 56%, #d9ebe9);
   min-height: 100vh;
 }
-.brand {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: .55rem;
-  margin-bottom: 1rem;
+.demo-banner {
+  background: #fff3cd; border: 1px solid #e6d089; padding: .5rem .75rem;
+  border-radius: 8px; max-width: 70rem; margin-bottom: 1rem;
 }
+.brand { display: flex; flex-direction: column; align-items: flex-start; gap: .55rem; margin-bottom: 1rem; }
 .brand .logo {
-  display: block;
-  width: 11rem;
-  height: 2.75rem;
+  display: block; width: 11rem; height: 2.75rem;
   background: url('branding/logo.svg') center / contain no-repeat;
 }
 .brand .product {
-  margin: 0;
-  color: var(--muted);
-  font-size: .75rem;
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  margin: 0; color: var(--muted); font-size: .75rem; font-weight: 700;
+  letter-spacing: .08em; text-transform: uppercase;
 }
 .meta { color: var(--muted); margin: 0 0 1.25rem; }
 .meta a { color: var(--teal); font-weight: 600; }
 h2 { font-size: 1.05rem; margin: 1.5rem 0 .6rem; }
 table.disk-table {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--card);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
-  table-layout: fixed;
+  width: 100%; border-collapse: collapse; background: var(--card);
+  border: 1px solid var(--line); border-radius: 10px; overflow: hidden; table-layout: fixed;
 }
 table.disk-table col.c-host { width: 12%; }
 table.disk-table col.c-serial { width: 18%; }
@@ -72,56 +47,162 @@ table.disk-table col.c-smart { width: 8%; }
 table.disk-table col.c-scr { width: 8%; }
 table.disk-table col.c-attrs { width: 36%; }
 table.disk-table th, table.disk-table td {
-  padding: .55rem .65rem;
-  text-align: left;
-  vertical-align: top;
-  border-bottom: 1px solid var(--line);
-  word-break: break-word;
+  padding: .55rem .65rem; text-align: left; vertical-align: top;
+  border-bottom: 1px solid var(--line); word-break: break-word;
 }
 table.disk-table th {
-  background: rgba(0,125,138,.08);
-  font-size: .78rem;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-  color: var(--muted);
+  background: rgba(0,125,138,.08); font-size: .78rem; text-transform: uppercase;
+  letter-spacing: .04em; color: var(--muted);
 }
 tr.critical td:first-child, tr.growing td:first-child { box-shadow: inset 3px 0 0 var(--crit); }
 tr.warn td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
 tr.ok td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 .sub { color: var(--muted); font-size: .8rem; margin-top: .15rem; }
+.sub.topo { color: #005f69; }
 code { font-size: .85rem; }
 .muted { color: var(--muted); }
-table.attrs {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: .82rem;
-}
+table.attrs { width: 100%; border-collapse: collapse; font-size: .82rem; table-layout: fixed; }
+table.attrs col.c-a-name { width: 22%; }
+table.attrs col.c-a-nu { width: 12%; }
+table.attrs col.c-a-bas { width: 14%; }
+table.attrs col.c-a-dtot { width: 12%; }
+table.attrs col.c-a-dprev { width: 12%; }
+table.attrs col.c-a-trend { width: 16%; }
+table.attrs col.c-a-hist { width: 12%; }
 table.attrs th, table.attrs td {
-  padding: .2rem .3rem;
-  border: none;
-  border-bottom: 1px solid rgba(18,23,24,.06);
+  padding: .25rem .35rem; border: none; border-bottom: 1px solid rgba(18,23,24,.06); vertical-align: middle;
 }
-table.attrs .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.attrs th.num, table.attrs td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.attrs th.trend, table.attrs td.trend, table.attrs th.hist, table.attrs td.hist { text-align: center; white-space: nowrap; }
 .chip {
   display: inline-block; padding: .1rem .4rem; border-radius: 999px;
-  font-size: .72rem; font-weight: 600; }
+  font-size: .72rem; font-weight: 600;
+}
 .chip.critical, .chip.growing { background: rgba(194,59,46,.12); color: var(--crit); }
 .chip.warn { background: rgba(176,122,0,.14); color: #8a5f00; }
-.chip.info { background: rgba(0,125,138,.1); color: #005f69; }
-.badge { display: inline-block; margin-left: .35rem; padding: .05rem .35rem; border-radius: 6px;
-  font-size: .68rem; font-weight: 700; letter-spacing: .03em; vertical-align: middle; }
+.chip.ok { background: rgba(47,122,85,.12); color: #2f7a55; }
+.chip.kind { background: rgba(0,125,138,.12); color: #005f69; text-transform: uppercase; letter-spacing: .04em; }
+.badge {
+  display: inline-block; margin-left: .35rem; padding: .05rem .35rem; border-radius: 6px;
+  font-size: .68rem; font-weight: 700; letter-spacing: .03em; vertical-align: middle;
+}
 .badge.grow, .badge.growing { background: rgba(196,74,50,.18); color: #8a3222; }
 .badge.stable { background: rgba(47,122,85,.14); color: #2f7a55; }
 .badge.base { background: rgba(0,125,138,.12); color: #005f69; }
+.hist-btn {
+  margin: 0; border: 1px solid var(--line); background: rgba(0,125,138,.08);
+  color: var(--teal); font: inherit; font-size: .68rem; font-weight: 700;
+  padding: .12rem .4rem; border-radius: 6px; cursor: pointer;
+}
+.view-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; margin: 0 0 1rem; }
+.view-toggle {
+  display: inline-flex; gap: .35rem; padding: .2rem;
+  background: rgba(0,125,138,.08); border-radius: 999px; border: 1px solid var(--line);
+}
+.view-toggle button {
+  border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 600;
+  font-size: .82rem; padding: .35rem .9rem; border-radius: 999px; cursor: pointer;
+}
+.view-toggle button.active { background: var(--card); color: var(--teal); box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+.view-panel { display: none; }
+.view-panel.active { display: block; }
+.topo-level {
+  display: inline-block; font-size: .65rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); margin-right: .35rem; vertical-align: middle;
+}
+.topo-count {
+  display: inline-block; margin-left: .35rem; padding: .05rem .4rem; border-radius: 999px;
+  font-size: .68rem; font-weight: 600; color: var(--muted); background: rgba(18,23,24,.06);
+}
+.topo-host { margin: 1.25rem 0 1.75rem; }
+.topo-host-h {
+  margin: 0 0 .65rem; font-size: 1.05rem; color: var(--teal);
+  padding-bottom: .4rem; border-bottom: 2px solid rgba(0,125,138,.35);
+}
+.topo-host-body { margin-left: .15rem; padding-left: 1rem; border-left: 3px solid rgba(0,125,138,.28); }
+.topo-pool {
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: .7rem .9rem .85rem; margin: .7rem 0 .85rem;
+}
+.topo-pool-h { margin-bottom: .55rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }
+.topo-pool-name { font-size: 1rem; }
+.topo-pool-body { margin: 0 0 0 .35rem; padding-left: .9rem; border-left: 2px dashed rgba(0,125,138,.28); }
+.topo-vdev { margin: .55rem 0 .4rem; padding: .15rem 0 .15rem .85rem; border-left: 3px solid rgba(0,125,138,.42); }
+.topo-vdev-h { font-size: .78rem; font-weight: 700; color: var(--muted); letter-spacing: .03em; margin-bottom: .3rem; }
+.topo-disks { list-style: none; margin: 0; padding: 0; }
+.topo-disk {
+  padding: .4rem .5rem; margin: .2rem 0; border-radius: 8px;
+  border: 1px solid transparent; border-bottom-color: rgba(18,23,24,.06);
+}
+.topo-disk.risk { background: rgba(176,122,0,.06); border-color: rgba(176,122,0,.18); }
+.topo-disk.growing { background: rgba(194,59,46,.07); border-color: rgba(194,59,46,.22); }
+.topo-disk-main { display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; }
+.topo-serial { font-size: .9rem; font-weight: 600; }
+.topo-findings { margin-top: .3rem; }
+.print-sheet { max-width: 52rem; }
+.print-head h1 { margin: 0 0 .35rem; font-size: 1.25rem; }
+.print-meta { margin: 0 0 .75rem; color: var(--muted); }
+.print-hint { margin: 0 0 .75rem; color: var(--muted); font-size: .9rem; }
+.print-btn {
+  border: 1px solid var(--line); background: var(--teal); color: #fff;
+  font: inherit; font-weight: 700; font-size: .85rem; padding: .45rem 1rem; border-radius: 8px;
+}
+.print-attn, .print-topo { margin: 1.25rem 0; }
+.print-attn h2, .print-topo h2 { margin: 0 0 .5rem; font-size: 1rem; }
+.print-host { margin: 1rem 0 1.25rem; }
+.print-host h3 {
+  margin: 0 0 .4rem; font-size: .95rem; color: var(--teal);
+  border-bottom: 1px solid var(--line); padding-bottom: .25rem;
+}
+.print-pool { margin: .55rem 0 .7rem .5rem; padding-left: .75rem; border-left: 2px solid rgba(0,125,138,.3); }
+.print-pool-h { font-size: .85rem; margin-bottom: .3rem; }
+.print-vdev { margin: .35rem 0 .45rem .4rem; padding-left: .65rem; border-left: 2px dashed rgba(0,125,138,.28); }
+.print-vdev-h {
+  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin-bottom: .2rem;
+}
+.print-table { width: 100%; border-collapse: collapse; font-size: .82rem; background: var(--card); border: 1px solid var(--line); }
+.print-table th, .print-table td {
+  text-align: left; padding: .28rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top;
+}
+.print-table th { font-size: .7rem; text-transform: uppercase; color: var(--muted); }
+.print-table .cb { width: 1.4rem; text-align: center; font-size: 1rem; }
+.print-table.compact { border: 0; background: transparent; }
+.print-table.compact td { border-bottom: 1px solid rgba(18,23,24,.08); padding: .22rem .3rem; }
+.print-table tr.attn td { background: rgba(194,59,46,.07); }
+.print-find { font-size: .75rem; color: var(--muted); }
 .legend { margin-top: 1rem; color: var(--muted); font-size: .85rem; max-width: 70rem; }
 .legend strong { color: var(--text); }
-@media (max-width: 30rem) {
-  .brand .logo { width: 9rem; height: 2.25rem; }
+.hist-modal {
+  display: none; position: fixed; inset: 0; z-index: 40;
+  background: rgba(18,23,24,.45); align-items: center; justify-content: center; padding: 1rem;
 }
+.hist-modal.open { display: flex; }
+.hist-card {
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  max-width: 36rem; width: 100%; max-height: 90vh; overflow: auto; padding: 1rem 1.1rem;
+  box-shadow: 0 12px 40px rgba(0,0,0,.18);
+}
+.hist-card h3 { margin: 0 0 .35rem; font-size: 1.05rem; }
+.hist-card .meta { margin: 0 0 .75rem; }
+.hist-card table { width: 100%; border-collapse: collapse; font-size: .85rem; margin-top: .75rem; }
+.hist-card th, .hist-card td { text-align: left; padding: .3rem .35rem; border-bottom: 1px solid var(--line); }
+.hist-card th { color: var(--muted); font-size: .72rem; text-transform: uppercase; }
+.hist-card .grow-row { color: var(--grow); font-weight: 600; }
+.hist-close {
+  float: right; border: 0; background: transparent; font-size: 1.2rem; cursor: pointer; color: var(--muted);
+}
+.spark { display: block; margin: .4rem 0; background: rgba(0,125,138,.04); border-radius: 8px; }
+.site-foot {
+  margin: 2rem 0 0; padding-top: .85rem; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: .72rem; letter-spacing: .02em;
+}
+.site-foot a { color: var(--muted); font-weight: 600; text-decoration: none; }
 </style>
 </head>
 <body>
-  <p style="background:#fff3cd;border:1px solid #e6d089;padding:.5rem .75rem;border-radius:8px;max-width:70rem"><strong>Demo screenshot</strong> — fictional serials and values for documentation.</p><header class="brand">
+  <p class="demo-banner"><strong>Demo screenshot</strong> — fictional serials and values for documentation.</p>
+  <header class="brand">
     <a class="logo" href="#" aria-label="Diskrisk"></a>
     <p class="product">Diskrisk</p>
   </header>
@@ -131,61 +212,127 @@ table.attrs .num { text-align: right; font-variant-numeric: tabular-nums; }
     3 with findings ·
     <strong>2 growing</strong> ·
     3 clean ·
-    Scrutiny status≥2: 1<br/>
+    Scrutiny status≥2: 1 ·
+    topology mapped: 48<br/>
     Source: Beszel attributes ·
     <a href="#">JSON</a> ·
-    <a href="#">text</a>
+    <a href="#">text</a> ·
+    <a href="#">history</a>
   </p>
 
+  <div class="view-bar">
+    <div class="view-toggle" role="tablist" aria-label="View mode">
+      <button type="button" class="active" data-view="list" aria-selected="true">Disk list</button>
+      <button type="button" data-view="topology" aria-selected="false">Topology</button>
+      <button type="button" data-view="print" aria-selected="false">Print sheet</button>
+    </div>
+  </div>
+
+  <div id="view-list" class="view-panel active">
   <h2>Risk disks</h2>
   <table class="disk-table">
-    
     <colgroup>
-      <col class="c-host"/>
-      <col class="c-serial"/>
-      <col class="c-model"/>
-      <col class="c-smart"/>
-      <col class="c-scr"/>
-      <col class="c-attrs"/>
+      <col class="c-host"/><col class="c-serial"/><col class="c-model"/>
+      <col class="c-smart"/><col class="c-scr"/><col class="c-attrs"/>
     </colgroup>
     <thead>
       <tr>
-        <th>Host</th>
-        <th>Serial / device</th>
-        <th>Model</th>
-        <th>SMART</th>
-        <th>Scrutiny</th>
-        <th>Risk attributes &amp; trend</th>
+        <th>Host</th><th>Serial / device</th><th>Model</th>
+        <th>SMART</th><th>Scrutiny</th><th>Risk attributes &amp; trend</th>
       </tr>
     </thead>
     <tbody>
-      <tr class='growing'><td>nas-garage <span class="badge grow">GROWING</span></td><td><code>DEMO-SERIAL-815A</code><div class='sub'>/dev/sdt</div></td><td>Example SAS 2TB</td><td>PASSED</td><td>0</td><td class='attrs-cell'><table class="attrs"><colgroup><col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/><col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/></colgroup><thead><tr><th>Attribute</th><th>Now</th><th>Baseline</th><th>Δ tot</th><th>Δ last</th><th>Trend</th></tr></thead><tbody><tr class="attr growing" title="GrownDefectList · first_seen=2026-01-10T00:00:00Z"><td class="attr-name"><span class="chip growing">GrownDefect</span></td><td class="num">815</td><td class="num">725</td><td class="num">+90</td><td class="num">+15</td><td><span class="badge growing">GROWING</span></td></tr></tbody></table></td></tr><tr class='growing'><td>nas-office <span class="badge grow">GROWING</span></td><td><code>DEMO-SERIAL-PEND9</code><div class='sub'>/dev/sdp</div></td><td>Example SATA 3TB</td><td>PASSED</td><td>2</td><td class='attrs-cell'><table class="attrs"><colgroup><col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/><col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/></colgroup><thead><tr><th>Attribute</th><th>Now</th><th>Baseline</th><th>Δ tot</th><th>Δ last</th><th>Trend</th></tr></thead><tbody><tr class="attr growing" title="Current_Pending_Sector · first_seen=2026-02-01T00:00:00Z"><td class="attr-name"><span class="chip growing">Pending</span></td><td class="num">9</td><td class="num">8</td><td class="num">+1</td><td class="num">+1</td><td><span class="badge growing">GROWING</span></td></tr><tr class="attr growing" title="Offline_Uncorrectable · first_seen=2026-02-01T00:00:00Z"><td class="attr-name"><span class="chip growing">OfflineUnc</span></td><td class="num">3</td><td class="num">1</td><td class="num">+2</td><td class="num">+2</td><td><span class="badge growing">GROWING</span></td></tr><tr class="attr growing" title="Multi_Zone_Error_Rate · first_seen=2026-02-01T00:00:00Z"><td class="attr-name"><span class="chip growing">MultiZone</span></td><td class="num">4</td><td class="num">3</td><td class="num">+1</td><td class="num">+1</td><td><span class="badge growing">GROWING</span></td></tr></tbody></table></td></tr><tr class='warn'><td>nas-garage <span class="badge stable">stable</span></td><td><code>DEMO-SERIAL-MZ108</code><div class='sub'>/dev/sdk</div></td><td>Example SATA 3TB</td><td>PASSED</td><td>0</td><td class='attrs-cell'><table class="attrs"><colgroup><col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/><col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/></colgroup><thead><tr><th>Attribute</th><th>Now</th><th>Baseline</th><th>Δ tot</th><th>Δ last</th><th>Trend</th></tr></thead><tbody><tr class="attr warn" title="Multi_Zone_Error_Rate · first_seen=2025-11-01T00:00:00Z"><td class="attr-name"><span class="chip warn">MultiZone</span></td><td class="num">108</td><td class="num">108</td><td class="num">0</td><td class="num">0</td><td><span class="badge stable">stable</span></td></tr></tbody></table></td></tr>
+      <tr class="growing">
+        <td>nas-garage <span class="badge grow">GROWING</span></td>
+        <td><code>DEMO-SERIAL-815A</code><div class="sub">/dev/sdt</div>
+          <div class="sub topo">zfs · tank / mirror-1 · peer DEMO-PARTNER-OK</div></td>
+        <td>Example SAS 2TB</td><td>PASSED</td><td>0</td>
+        <td class="attrs-cell"><table class="attrs"><colgroup>
+          <col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>
+          <col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/><col class="c-a-hist"/>
+          </colgroup><thead><tr>
+            <th class="attr-name">Attribute</th><th class="num">Now</th><th class="num">Baseline</th>
+            <th class="num">Δ tot</th><th class="num">Δ last</th><th class="trend">Trend</th><th class="hist">Hist</th>
+          </tr></thead><tbody>
+          <tr class="attr growing">
+            <td class="attr-name"><span class="chip growing">GrownDefect</span></td>
+            <td class="num">815</td><td class="num">725</td><td class="num">+90</td><td class="num">+15</td>
+            <td class="trend"><span class="badge growing">GROWING</span></td>
+            <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+          </tr>
+          </tbody></table></td>
+      </tr>
+      <tr class="growing">
+        <td>nas-office <span class="badge grow">GROWING</span></td>
+        <td><code>DEMO-SERIAL-PEND9</code><div class="sub">/dev/sdp</div>
+          <div class="sub topo">zfs · tank / raidz2-0</div></td>
+        <td>Example SATA 3TB</td><td>PASSED</td><td>2</td>
+        <td class="attrs-cell"><table class="attrs"><colgroup>
+          <col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>
+          <col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/><col class="c-a-hist"/>
+          </colgroup><thead><tr>
+            <th class="attr-name">Attribute</th><th class="num">Now</th><th class="num">Baseline</th>
+            <th class="num">Δ tot</th><th class="num">Δ last</th><th class="trend">Trend</th><th class="hist">Hist</th>
+          </tr></thead><tbody>
+          <tr class="attr growing">
+            <td class="attr-name"><span class="chip growing">Pending</span></td>
+            <td class="num">9</td><td class="num">8</td><td class="num">+1</td><td class="num">+1</td>
+            <td class="trend"><span class="badge growing">GROWING</span></td>
+            <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+          </tr>
+          <tr class="attr growing">
+            <td class="attr-name"><span class="chip growing">OfflineUnc</span></td>
+            <td class="num">3</td><td class="num">1</td><td class="num">+2</td><td class="num">+2</td>
+            <td class="trend"><span class="badge growing">GROWING</span></td>
+            <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+          </tr>
+          <tr class="attr growing">
+            <td class="attr-name"><span class="chip growing">MultiZone</span></td>
+            <td class="num">4</td><td class="num">3</td><td class="num">+1</td><td class="num">+1</td>
+            <td class="trend"><span class="badge growing">GROWING</span></td>
+            <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+          </tr>
+          </tbody></table></td>
+      </tr>
+      <tr class="warn">
+        <td>nas-garage <span class="badge stable">stable</span></td>
+        <td><code>DEMO-SERIAL-MZ108</code><div class="sub">/dev/sdk</div>
+          <div class="sub topo">zfs · tank / mirror-0 · peer DEMO-CLEAN-001</div></td>
+        <td>Example SATA 3TB</td><td>PASSED</td><td>0</td>
+        <td class="attrs-cell"><table class="attrs"><colgroup>
+          <col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>
+          <col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/><col class="c-a-hist"/>
+          </colgroup><thead><tr>
+            <th class="attr-name">Attribute</th><th class="num">Now</th><th class="num">Baseline</th>
+            <th class="num">Δ tot</th><th class="num">Δ last</th><th class="trend">Trend</th><th class="hist">Hist</th>
+          </tr></thead><tbody>
+          <tr class="attr warn">
+            <td class="attr-name"><span class="chip warn">MultiZone</span></td>
+            <td class="num">108</td><td class="num">108</td><td class="num">0</td><td class="num">0</td>
+            <td class="trend"><span class="badge stable">stable</span></td>
+            <td class="hist"><button type="button" class="hist-btn">Hist</button></td>
+          </tr>
+          </tbody></table></td>
+      </tr>
     </tbody>
   </table>
 
   <h2>Clean disks</h2>
   <table class="disk-table">
-    
     <colgroup>
-      <col class="c-host"/>
-      <col class="c-serial"/>
-      <col class="c-model"/>
-      <col class="c-smart"/>
-      <col class="c-scr"/>
-      <col class="c-attrs"/>
+      <col class="c-host"/><col class="c-serial"/><col class="c-model"/>
+      <col class="c-smart"/><col class="c-scr"/><col class="c-attrs"/>
     </colgroup>
     <thead>
       <tr>
-        <th>Host</th>
-        <th>Serial / device</th>
-        <th>Model</th>
-        <th>SMART</th>
-        <th>Scrutiny</th>
-        <th>Risk attributes &amp; trend</th>
+        <th>Host</th><th>Serial / device</th><th>Model</th>
+        <th>SMART</th><th>Scrutiny</th><th>Risk attributes &amp; trend</th>
       </tr>
     </thead>
     <tbody>
-      <tr class='ok'><td>nas-garage</td><td><code>DEMO-CLEAN-001</code><div class='sub'>/dev/sda</div></td><td>Example SAS 2TB</td><td>PASSED</td><td class='muted'>—</td><td class='muted'>no risk attributes · clean</td></tr><tr class='ok'><td>nas-garage</td><td><code>DEMO-CLEAN-002</code><div class='sub'>/dev/sdb</div></td><td>Example SAS 2TB</td><td>PASSED</td><td class='muted'>—</td><td class='muted'>no risk attributes · clean</td></tr><tr class='ok'><td>nas-office</td><td><code>DEMO-CLEAN-003</code><div class='sub'>/dev/sdc</div></td><td>Example SSD 240G</td><td>PASSED</td><td class='muted'>—</td><td class='muted'>no risk attributes · clean</td></tr>
+      <tr class="ok"><td>nas-garage</td><td><code>DEMO-CLEAN-001</code><div class="sub">/dev/sda</div><div class="sub topo">zfs · tank / mirror-0</div></td><td>Example SAS 2TB</td><td>PASSED</td><td class="muted">—</td><td class="muted">no risk attributes · clean</td></tr>
+      <tr class="ok"><td>nas-garage</td><td><code>DEMO-CLEAN-002</code><div class="sub">/dev/sdb</div><div class="sub topo">zfs · tank / mirror-0</div></td><td>Example SAS 2TB</td><td>PASSED</td><td class="muted">—</td><td class="muted">no risk attributes · clean</td></tr>
+      <tr class="ok"><td>nas-office</td><td><code>DEMO-CLEAN-003</code><div class="sub">/dev/sdc</div><div class="sub topo">zfs · tank / raidz2-0</div></td><td>Example SSD 240G</td><td>PASSED</td><td class="muted">—</td><td class="muted">no risk attributes · clean</td></tr>
     </tbody>
   </table>
 
@@ -197,11 +344,244 @@ table.attrs .num { text-align: right; font-variant-numeric: tabular-nums; }
     <span class="badge stable">stable</span> =
     same as baseline,
     <span class="badge grow">GROWING</span> =
-    acute — the value increased).<br/><br/>
-    <strong>Critical:</strong> Realloc / Pending / OfflineUnc / GrownDefect etc. —
-    <strong>Warn:</strong> UDMA_CRC (cable/HBA), MultiZone —
-    Seagate Raw_Read / Seek are flagged only if norm ≤ thresh.<br/>
-    History: <code>/var/lib/diskrisk/history.json</code>.
+    acute — the value increased).
   </p>
+  </div>
+
+  <div id="view-topology" class="view-panel">
+    <h2>Pool topology</h2>
+    <p class="meta">Host → pool → vdev, indented. Same SMART risk chips, grouped how disks belong together.</p>
+
+    <section class="topo-host">
+      <h3 class="topo-host-h"><span class="topo-level">Host</span> nas-garage <span class="topo-count">5 disks</span></h3>
+      <div class="topo-host-body">
+        <div class="topo-pool">
+          <div class="topo-pool-h">
+            <span class="topo-level">Pool</span>
+            <span class="chip kind">zfs</span>
+            <strong class="topo-pool-name">tank</strong>
+            <span class="topo-count">5</span>
+          </div>
+          <div class="topo-pool-body">
+            <div class="topo-vdev">
+              <div class="topo-vdev-h"><span class="topo-level">vdev</span> mirror-0 <span class="topo-count">2</span></div>
+              <ul class="topo-disks">
+                <li class="topo-disk risk">
+                  <div class="topo-disk-main"><span class="chip warn">warn</span> <code class="topo-serial">DEMO-SERIAL-MZ108</code></div>
+                  <div class="sub topo-disk-meta">/dev/sdk · Example SATA 3TB</div>
+                  <div class="topo-findings"><span class="chip warn">MultiZone=108</span></div>
+                </li>
+                <li class="topo-disk">
+                  <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-CLEAN-001</code></div>
+                  <div class="sub topo-disk-meta">/dev/sda · Example SAS 2TB</div>
+                </li>
+              </ul>
+            </div>
+            <div class="topo-vdev">
+              <div class="topo-vdev-h"><span class="topo-level">vdev</span> mirror-1 <span class="topo-count">2</span></div>
+              <ul class="topo-disks">
+                <li class="topo-disk growing">
+                  <div class="topo-disk-main"><span class="chip growing">GROWING</span> <code class="topo-serial">DEMO-SERIAL-815A</code></div>
+                  <div class="sub topo-disk-meta">/dev/sdt · Example SAS 2TB</div>
+                  <div class="topo-findings"><span class="chip growing">GrownDefect=815↑</span></div>
+                </li>
+                <li class="topo-disk">
+                  <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-PARTNER-OK</code></div>
+                  <div class="sub topo-disk-meta">/dev/sdf · Example SAS 2TB</div>
+                </li>
+              </ul>
+            </div>
+            <div class="topo-vdev">
+              <div class="topo-vdev-h"><span class="topo-level">vdev</span> spares <span class="topo-count">1</span></div>
+              <ul class="topo-disks">
+                <li class="topo-disk">
+                  <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-SPARE-002</code> <span class="muted topo-role">(spare)</span></div>
+                  <div class="sub topo-disk-meta">/dev/sdw · Example SAS 2TB</div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="topo-host">
+      <h3 class="topo-host-h"><span class="topo-level">Host</span> nas-office <span class="topo-count">3 disks</span></h3>
+      <div class="topo-host-body">
+        <div class="topo-pool">
+          <div class="topo-pool-h">
+            <span class="topo-level">Pool</span>
+            <span class="chip kind">zfs</span>
+            <strong class="topo-pool-name">tank</strong>
+            <span class="topo-count">3</span>
+          </div>
+          <div class="topo-pool-body">
+            <div class="topo-vdev">
+              <div class="topo-vdev-h"><span class="topo-level">vdev</span> raidz2-0 <span class="topo-count">3</span></div>
+              <ul class="topo-disks">
+                <li class="topo-disk growing">
+                  <div class="topo-disk-main"><span class="chip growing">GROWING</span> <code class="topo-serial">DEMO-SERIAL-PEND9</code></div>
+                  <div class="sub topo-disk-meta">/dev/sdp · Example SATA 3TB</div>
+                  <div class="topo-findings">
+                    <span class="chip growing">Pending=9↑</span>
+                    <span class="chip growing">OfflineUnc=3↑</span>
+                    <span class="chip growing">MultiZone=4↑</span>
+                  </div>
+                </li>
+                <li class="topo-disk">
+                  <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-CLEAN-003</code></div>
+                  <div class="sub topo-disk-meta">/dev/sdc · Example SSD 240G</div>
+                </li>
+                <li class="topo-disk">
+                  <div class="topo-disk-main"><span class="chip ok">ok</span> <code class="topo-serial">DEMO-RZ-PEER-A</code></div>
+                  <div class="sub topo-disk-meta">/dev/sde · Example SATA 3TB</div>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="view-print" class="view-panel">
+    <article class="print-sheet">
+      <header class="print-head">
+        <h1>Diskrisk field sheet</h1>
+        <p class="print-meta">2026-09-06 12:00:00Z · 48 disks · <strong>3 with findings</strong> · <strong>2 growing</strong></p>
+        <p class="print-hint">Tick boxes as you work. Use <strong>Print…</strong> for paper or PDF.</p>
+        <p class="print-actions"><button type="button" class="print-btn">Print…</button></p>
+      </header>
+
+      <section class="print-attn">
+        <h2>Needs attention</h2>
+        <table class="print-table">
+          <thead><tr><th class="cb"></th><th>Host</th><th>Serial</th><th>Device</th><th>Where</th><th>Risk</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="cb">☐</td><td>nas-garage</td><td><code>DEMO-SERIAL-815A</code></td>
+              <td>/dev/sdt</td><td>zfs · tank / mirror-1</td>
+              <td><strong>GROWING</strong><br/><span class="print-find">GrownDefect=815↑</span></td>
+            </tr>
+            <tr>
+              <td class="cb">☐</td><td>nas-office</td><td><code>DEMO-SERIAL-PEND9</code></td>
+              <td>/dev/sdp</td><td>zfs · tank / raidz2-0</td>
+              <td><strong>GROWING</strong><br/><span class="print-find">Pending=9↑, OfflineUnc=3↑, MultiZone=4↑</span></td>
+            </tr>
+            <tr>
+              <td class="cb">☐</td><td>nas-garage</td><td><code>DEMO-SERIAL-MZ108</code></td>
+              <td>/dev/sdk</td><td>zfs · tank / mirror-0</td>
+              <td><strong>warn</strong><br/><span class="print-find">MultiZone=108</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="print-topo">
+        <h2>All disks by topology</h2>
+        <div class="print-host">
+          <h3>nas-garage</h3>
+          <div class="print-pool">
+            <div class="print-pool-h">zfs · <strong>tank</strong></div>
+            <div class="print-vdev">
+              <div class="print-vdev-h">mirror-1</div>
+              <table class="print-table compact"><tbody>
+                <tr class="attn"><td class="cb">☐</td><td><code>DEMO-SERIAL-815A</code></td><td>/dev/sdt</td><td>Example SAS 2TB</td><td>GROWING · GrownDefect=815↑</td></tr>
+                <tr><td class="cb">☐</td><td><code>DEMO-PARTNER-OK</code></td><td>/dev/sdf</td><td>Example SAS 2TB</td><td></td></tr>
+              </tbody></table>
+            </div>
+            <div class="print-vdev">
+              <div class="print-vdev-h">mirror-0</div>
+              <table class="print-table compact"><tbody>
+                <tr class="attn"><td class="cb">☐</td><td><code>DEMO-SERIAL-MZ108</code></td><td>/dev/sdk</td><td>Example SATA 3TB</td><td>risk · MultiZone=108</td></tr>
+                <tr><td class="cb">☐</td><td><code>DEMO-CLEAN-001</code></td><td>/dev/sda</td><td>Example SAS 2TB</td><td></td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+        <div class="print-host">
+          <h3>nas-office</h3>
+          <div class="print-pool">
+            <div class="print-pool-h">zfs · <strong>tank</strong></div>
+            <div class="print-vdev">
+              <div class="print-vdev-h">raidz2-0</div>
+              <table class="print-table compact"><tbody>
+                <tr class="attn"><td class="cb">☐</td><td><code>DEMO-SERIAL-PEND9</code></td><td>/dev/sdp</td><td>Example SATA 3TB</td><td>GROWING · Pending=9↑, OfflineUnc=3↑</td></tr>
+                <tr><td class="cb">☐</td><td><code>DEMO-CLEAN-003</code></td><td>/dev/sdc</td><td>Example SSD 240G</td><td></td></tr>
+                <tr><td class="cb">☐</td><td><code>DEMO-RZ-PEER-A</code></td><td>/dev/sde</td><td>Example SATA 3TB</td><td></td></tr>
+              </tbody></table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </article>
+  </div>
+
+  <div id="hist-modal" class="hist-modal" role="dialog" aria-modal="true" aria-labelledby="hist-title" hidden>
+    <div class="hist-card">
+      <button type="button" class="hist-close" aria-label="Close">×</button>
+      <h3 id="hist-title">GrownDefect — DEMO-SERIAL-815A</h3>
+      <p class="meta">nas-garage · first seen <strong>2026-08-21T11:48:47Z</strong> · now <strong>815</strong> · Δ tot <strong>+90</strong><br/>
+        Grown defect list (SAS): defects found after manufacturing. A scar can sit stable for years; GROWING means new defects are appearing now.</p>
+      <div id="hist-spark">
+        <svg class="spark" viewBox="0 0 280 56" width="280" height="56">
+          <polyline fill="none" stroke="#007d8a" stroke-width="2"
+            points="4.0,52.0 35.0,48.5 66.0,48.5 97.0,45.0 128.0,42.0 159.0,35.0 190.0,28.0 221.0,14.0 252.0,5.5 276.0,4.0"/>
+          <circle cx="276.0" cy="4.0" r="3" fill="#c44a32"/>
+        </svg>
+      </div>
+      <table>
+        <thead><tr><th>When</th><th>Value</th><th>Δ</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>2026-08-21T11:48:47Z</td><td>725</td><td>—</td><td>baseline</td></tr>
+          <tr class="grow-row"><td>2026-08-21T15:31:41Z</td><td>730</td><td>+5</td><td>grew</td></tr>
+          <tr><td>2026-08-22T00:00:01Z</td><td>730</td><td>0</td><td>same</td></tr>
+          <tr class="grow-row"><td>2026-08-26T05:19:41Z</td><td>751</td><td>+13</td><td>grew</td></tr>
+          <tr class="grow-row"><td>2026-08-31T08:20:00Z</td><td>790</td><td>+17</td><td>grew</td></tr>
+          <tr class="grow-row"><td>2026-09-01T11:47:00Z</td><td>814</td><td>+24</td><td>grew</td></tr>
+          <tr class="grow-row"><td>2026-09-04T14:00:01Z</td><td>815</td><td>+1</td><td>grew</td></tr>
+          <tr><td>2026-09-06T00:00:00Z</td><td>815</td><td>0</td><td>same</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var buttons = document.querySelectorAll('.view-toggle button');
+  function show(name) {
+    document.querySelectorAll('.view-panel').forEach(function (el) {
+      el.classList.toggle('active', el.id === 'view-' + name);
+    });
+    buttons.forEach(function (btn) {
+      var on = btn.getAttribute('data-view') === name;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+  }
+  buttons.forEach(function (btn) {
+    btn.addEventListener('click', function () { show(btn.getAttribute('data-view')); });
+  });
+  var modal = document.getElementById('hist-modal');
+  function openHist() {
+    show('list');
+    modal.classList.add('open');
+    modal.hidden = false;
+  }
+  function closeHist() {
+    modal.classList.remove('open');
+    modal.hidden = true;
+  }
+  document.querySelector('.hist-close').addEventListener('click', closeHist);
+  modal.addEventListener('click', function (e) { if (e.target === modal) closeHist(); });
+  document.querySelectorAll('.hist-btn').forEach(function (btn) {
+    btn.addEventListener('click', openHist);
+  });
+  var q = new URLSearchParams(location.search).get('view');
+  if (q === 'topology' || q === 'print' || q === 'list') show(q);
+  if (q === 'history') openHist();
+})();
+</script>
+<footer class="site-foot no-print"><a href="https://bagoly.se">bagoly.se</a> · 2026 · Diskrisk · MIT</footer>
 </body>
 </html>

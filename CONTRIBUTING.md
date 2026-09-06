@@ -34,3 +34,24 @@ bash -n diskinfo/diskinfo.sh install.sh update.sh
 3. Update `docs/` and `CHANGELOG.md` when behaviour changes.
 4. Bump `VERSION` / `__version__` / `diskinfo` `VERSION=` together when releasing.
 5. If an LLM wrote large parts of the change, say so in the PR (one line is enough).
+
+## Release assets (optional checksums)
+
+Install is normally via `git clone` + `./update.sh`. For people who download a
+release archive, publish a **SHA-256** checksum (not MD5):
+
+```bash
+./scripts/release-assets.sh 1.3.5
+# → dist/diskrisk-1.3.5.tar.gz
+# → dist/SHA256SUMS
+
+gh release create "v1.3.5" --title "…" --notes-file - \
+  dist/diskrisk-1.3.5.tar.gz dist/SHA256SUMS
+# or: gh release upload "v1.3.5" dist/diskrisk-1.3.5.tar.gz dist/SHA256SUMS
+```
+
+Verify a download:
+
+```bash
+sha256sum -c SHA256SUMS
+```

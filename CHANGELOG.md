@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.5] — 2026-09-06
+
+### Diskrisk
+- Clearer **Topology** hierarchy: Host → Pool → vdev with indented tree lines, disk counts, and risk highlighting
+- **Print sheet** view: checklist for the server room (attention list + all disks by topology); Print… hides UI chrome
+- Subtle footer credit (`DISKRISK_BRAND_FOOTER` / brand URL): e.g. `bagoly.se · 2026 · Diskrisk · MIT` (no ©)
+- Docs screenshots updated (list / topology / print sheet / history + diskinfo with raidz)
+- `scripts/release-assets.sh` — source tarball + **SHA-256** checksums for GitHub Releases (prefer over MD5)
+
 ## [1.3.4] — 2026-09-06
 
 ### Diskrisk

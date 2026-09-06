@@ -2,7 +2,7 @@
 # Install or refresh Diskrisk + diskinfo on a Linux host.
 #
 # Recommended (git checkout = app, easy updates):
-#   sudo git clone <repo-url> /opt/diskrisk
+#   sudo git clone https://github.com/nonifo/diskrisk.git /opt/diskrisk
 #   cd /opt/diskrisk && sudo ./install.sh
 #   sudoedit /etc/diskrisk/config.env
 #   sudo systemctl start diskrisk

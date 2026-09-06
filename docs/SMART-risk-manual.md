@@ -224,7 +224,7 @@ Service listens on `SMART_RISK_LISTEN` (default `0.0.0.0:8091`).
 ## 7. Operations
 
 ```bash
-sudo git clone <repo> /opt/diskrisk
+sudo git clone https://github.com/nonifo/diskrisk.git /opt/diskrisk
 cd /opt/diskrisk && sudo ./install.sh
 sudoedit /etc/diskrisk/config.env
 sudo systemctl enable --now diskrisk

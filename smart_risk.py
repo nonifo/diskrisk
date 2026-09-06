@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-__version__ = "1.3.4"
+__version__ = "1.3.5"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
@@ -36,7 +36,7 @@ def _load_config_file() -> Path | None:
     Search order:
       1. $DISKRISK_CONFIG
       2. ./config.env (cwd)
-      3. <repo>/config.env
+      3. config.env beside this script (e.g. /opt/diskrisk/config.env)
       4. /etc/diskrisk/config.env
     """
     candidates: list[Path] = []
@@ -93,6 +93,8 @@ BRANDING_DIR = Path(
 PRODUCT_NAME = os.environ.get("DISKRISK_PRODUCT", "Diskrisk")
 BRAND_URL = os.environ.get("DISKRISK_BRAND_URL", "").strip()
 LOGO_FILE = os.environ.get("DISKRISK_LOGO", "logo.svg").strip() or "logo.svg"
+# Optional footer label, e.g. "bagoly.se" — no © mark; year + MIT shown separately.
+BRAND_FOOTER = os.environ.get("DISKRISK_BRAND_FOOTER", "").strip()
 TOPOLOGY_DIR = Path(
     os.environ.get(
         "SMART_RISK_TOPOLOGY",
@@ -907,8 +909,20 @@ def _disk_risk_chip(r: DiskRisk | CleanDisk, is_risk: bool) -> str:
     return _chip("ok", "ok", STATUS_HELP["ok"])
 
 
-def _render_topology_view(report: dict[str, Any]) -> str:
-    """Group disks by host → pool → vdev for the Topology view."""
+def _disk_sort_key(item: tuple[Any, bool]) -> tuple:
+    d, ir = item
+    grow = int(getattr(d, "any_growing", False)) if ir else 0
+    sev = int(getattr(d, "severity", 0)) if ir else 0
+    return (-grow, -sev, d.serial or d.name)
+
+
+def _build_topology_tree(
+    report: dict[str, Any],
+) -> tuple[
+    dict[str, dict[str, dict[str, list[tuple[Any, bool]]]]],
+    dict[str, list[tuple[Any, bool]]],
+]:
+    """host → pool → vdev → [(disk, is_risk), …] plus unmapped by host."""
     by_serial: dict[str, tuple[Any, bool]] = {}
     for r in report.get("risks") or []:
         by_serial[_norm_serial(r.serial) or r.name] = (r, True)
@@ -916,10 +930,8 @@ def _render_topology_view(report: dict[str, Any]) -> str:
         key = _norm_serial(c.serial) or c.name
         by_serial.setdefault(key, (c, False))
 
-    # host → pool → vdev → [entries]
     tree: dict[str, dict[str, dict[str, list[tuple[Any, bool]]]]] = {}
     unmapped: dict[str, list[tuple[Any, bool]]] = {}
-
     for _key, (disk, is_risk) in by_serial.items():
         host = disk.system
         t = disk.topology
@@ -929,75 +941,264 @@ def _render_topology_view(report: dict[str, Any]) -> str:
         pool = t.pool
         vdev = t.vdev or t.role or "members"
         tree.setdefault(host, {}).setdefault(pool, {}).setdefault(vdev, []).append((disk, is_risk))
+    return tree, unmapped
 
+
+def _disk_finding_chips(disk: Any, is_risk: bool, limit: int = 4) -> str:
+    if not is_risk or not getattr(disk, "findings", None):
+        return ""
+    parts: list[str] = []
+    for f in disk.findings[:limit]:
+        short = SHORT.get(f.name, f.name)
+        arrow = "↑" if f.growing else ""
+        lvl = "growing" if f.growing else f.level
+        help_text = f"{short} ({f.name}): {_attr_help(f.name)}"
+        parts.append(_chip(lvl, f"{short}={f.value}{arrow}", help_text))
+    return " ".join(parts)
+
+
+def _disk_finding_text(disk: Any, is_risk: bool, limit: int = 5) -> str:
+    if not is_risk or not getattr(disk, "findings", None):
+        return ""
+    parts: list[str] = []
+    for f in disk.findings[:limit]:
+        short = SHORT.get(f.name, f.name)
+        arrow = "↑" if f.growing else ""
+        parts.append(f"{short}={f.value}{arrow}")
+    return ", ".join(parts)
+
+
+def _render_topology_disk_li(disk: Any, is_risk: bool) -> str:
+    chip = _disk_risk_chip(disk, is_risk)
+    role = ""
+    if disk.topology and disk.topology.role:
+        role = f' <span class="muted topo-role">({html.escape(disk.topology.role)})</span>'
+    findings = _disk_finding_chips(disk, is_risk)
+    findings_html = f'<div class="topo-findings">{findings}</div>' if findings else ""
+    risk_cls = " risk" if is_risk else ""
+    grow_cls = " growing" if is_risk and getattr(disk, "any_growing", False) else ""
+    return (
+        f'<li class="topo-disk{risk_cls}{grow_cls}">'
+        f'<div class="topo-disk-main">{chip} '
+        f'<code class="topo-serial">{html.escape(disk.serial or disk.name)}</code>'
+        f"{role}</div>"
+        f'<div class="sub topo-disk-meta">{html.escape(disk.name)} · {html.escape(disk.model)}</div>'
+        f"{findings_html}"
+        "</li>"
+    )
+
+
+def _render_topology_view(report: dict[str, Any]) -> str:
+    """Group disks by host → pool → vdev for the Topology view."""
+    tree, unmapped = _build_topology_tree(report)
     blocks: list[str] = []
     if not tree and not unmapped:
-        return '<p class="muted">No topology data yet. Run <code>topology_collect.py</code> on each storage host and place JSON under the topology directory.</p>'
+        return (
+            '<p class="muted">No topology data yet. Run <code>topology_collect.py</code> '
+            "on each storage host and place JSON under the topology directory.</p>"
+        )
 
     for host in sorted(tree.keys()):
-        blocks.append(f'<section class="topo-host"><h3>{html.escape(host)}</h3>')
+        host_n = sum(len(m) for pools in tree[host].values() for m in pools.values())
+        blocks.append(
+            f'<section class="topo-host">'
+            f'<h3 class="topo-host-h"><span class="topo-level">Host</span> '
+            f"{html.escape(host)}"
+            f' <span class="topo-count">{host_n} disks</span></h3>'
+            f'<div class="topo-host-body">'
+        )
         for pool in sorted(tree[host].keys()):
-            # kind from first disk
             sample = next(iter(tree[host][pool].values()))[0][0]
             kind = (sample.topology.kind if sample.topology else "") or ""
+            pool_n = sum(len(m) for m in tree[host][pool].values())
             blocks.append(
-                f'<div class="topo-pool"><div class="topo-pool-h">'
+                f'<div class="topo-pool">'
+                f'<div class="topo-pool-h">'
+                f'<span class="topo-level">Pool</span> '
                 f'<span class="chip kind">{html.escape(kind or "pool")}</span> '
-                f'<strong>{html.escape(pool)}</strong></div>'
+                f'<strong class="topo-pool-name">{html.escape(pool)}</strong>'
+                f' <span class="topo-count">{pool_n}</span></div>'
+                f'<div class="topo-pool-body">'
             )
             for vdev in sorted(tree[host][pool].keys()):
                 members = tree[host][pool][vdev]
-                blocks.append(f'<div class="topo-vdev"><div class="topo-vdev-h">{html.escape(vdev)}</div><ul>')
-                # sort: growing/risk first
-                def _sk(item: tuple[Any, bool]) -> tuple:
-                    d, ir = item
-                    grow = int(getattr(d, "any_growing", False)) if ir else 0
-                    sev = int(getattr(d, "severity", 0)) if ir else 0
-                    return (-grow, -sev, d.serial or d.name)
-
-                for disk, is_risk in sorted(members, key=_sk):
-                    chip = _disk_risk_chip(disk, is_risk)
-                    role = ""
-                    if disk.topology and disk.topology.role:
-                        role = f' <span class="muted">({html.escape(disk.topology.role)})</span>'
-                    findings = ""
-                    if is_risk and getattr(disk, "findings", None):
-                        parts = []
-                        for f in disk.findings[:4]:
-                            short = SHORT.get(f.name, f.name)
-                            arrow = "↑" if f.growing else ""
-                            lvl = "growing" if f.growing else f.level
-                            help_text = _attr_help(f.name)
-                            help_text = f"{short} ({f.name}): {help_text}"
-                            parts.append(_chip(lvl, f"{short}={f.value}{arrow}", help_text))
-                        if parts:
-                            findings = " " + " ".join(parts)
-                    blocks.append(
-                        "<li>"
-                        f"{chip} <code>{html.escape(disk.serial or disk.name)}</code>"
-                        f"{role}"
-                        f'<div class="sub">{html.escape(disk.name)} · {html.escape(disk.model)}</div>'
-                        f"{findings}"
-                        "</li>"
-                    )
+                blocks.append(
+                    f'<div class="topo-vdev">'
+                    f'<div class="topo-vdev-h"><span class="topo-level">vdev</span> '
+                    f"{html.escape(vdev)}"
+                    f' <span class="topo-count">{len(members)}</span></div>'
+                    f'<ul class="topo-disks">'
+                )
+                for disk, is_risk in sorted(members, key=_disk_sort_key):
+                    blocks.append(_render_topology_disk_li(disk, is_risk))
                 blocks.append("</ul></div>")
-            blocks.append("</div>")
-        blocks.append("</section>")
+            blocks.append("</div></div>")
+        blocks.append("</div></section>")
 
     if unmapped:
-        blocks.append('<section class="topo-host"><h3>Unmapped (SMART only)</h3>')
+        blocks.append(
+            '<section class="topo-host topo-unmapped">'
+            '<h3 class="topo-host-h"><span class="topo-level">Host</span> '
+            "Unmapped (SMART only)</h3>"
+            '<div class="topo-host-body">'
+        )
         for host in sorted(unmapped.keys()):
-            blocks.append(f'<div class="topo-pool"><div class="topo-pool-h"><strong>{html.escape(host)}</strong></div><ul>')
-            for disk, is_risk in unmapped[host]:
-                chip = _disk_risk_chip(disk, is_risk)
-                blocks.append(
-                    f"<li>{chip} <code>{html.escape(disk.serial or disk.name)}</code>"
-                    f'<div class="sub">{html.escape(disk.name)} · {html.escape(disk.model)}</div></li>'
-                )
+            members = unmapped[host]
+            blocks.append(
+                f'<div class="topo-pool">'
+                f'<div class="topo-pool-h"><strong>{html.escape(host)}</strong>'
+                f' <span class="topo-count">{len(members)}</span></div>'
+                f'<ul class="topo-disks">'
+            )
+            for disk, is_risk in sorted(members, key=_disk_sort_key):
+                blocks.append(_render_topology_disk_li(disk, is_risk))
             blocks.append("</ul></div>")
-        blocks.append("</section>")
+        blocks.append("</div></section>")
 
     return "\n".join(blocks)
+
+
+def _render_print_sheet(report: dict[str, Any]) -> str:
+    """Checklist for the server room: serial + device + where it sits + risk."""
+    tree, unmapped = _build_topology_tree(report)
+    gen = html.escape(str(report.get("generated") or ""))
+    n_risk = len(report.get("risks") or [])
+    n_grow = int(report.get("growing_count") or 0)
+    n_total = int(report.get("total_devices") or 0)
+
+    blocks: list[str] = [
+        '<article class="print-sheet">',
+        "<header class=\"print-head\">",
+        f"<h1>Diskrisk field sheet</h1>",
+        f'<p class="print-meta">{gen} · {n_total} disks · '
+        f"<strong>{n_risk} with findings</strong> · "
+        f"<strong>{n_grow} growing</strong></p>",
+        '<p class="print-hint no-print">Tick boxes as you work. '
+        "Use <strong>Print…</strong> for paper or PDF — chrome and UI chrome are hidden.</p>",
+        '<p class="print-actions no-print">'
+        '<button type="button" class="print-btn" id="print-go">Print…</button></p>',
+        "</header>",
+    ]
+
+    # Attention summary first
+    risks = list(report.get("risks") or [])
+    if risks:
+        blocks.append('<section class="print-attn"><h2>Needs attention</h2><table class="print-table">')
+        blocks.append(
+            "<thead><tr><th class=\"cb\"></th><th>Host</th><th>Serial</th>"
+            "<th>Device</th><th>Where</th><th>Risk</th></tr></thead><tbody>"
+        )
+        for r in risks:
+            where = ""
+            if r.topology and r.topology.summary:
+                where = f"{r.topology.kind} · {r.topology.summary}"
+            status = "GROWING" if r.any_growing else ("critical" if r.severity >= 2 else "warn")
+            findings = _disk_finding_text(r, True)
+            blocks.append(
+                "<tr>"
+                '<td class="cb">☐</td>'
+                f"<td>{html.escape(r.system)}</td>"
+                f"<td><code>{html.escape(r.serial or r.name)}</code></td>"
+                f"<td>{html.escape(r.name)}</td>"
+                f"<td>{html.escape(where)}</td>"
+                f"<td><strong>{html.escape(status)}</strong>"
+                + (f"<br/><span class=\"print-find\">{html.escape(findings)}</span>" if findings else "")
+                + "</td></tr>"
+            )
+        blocks.append("</tbody></table></section>")
+
+    blocks.append('<section class="print-topo"><h2>All disks by topology</h2>')
+    if not tree and not unmapped:
+        blocks.append('<p class="muted">No topology mapping — use Needs attention above.</p>')
+    else:
+        for host in sorted(tree.keys()):
+            blocks.append(f'<div class="print-host"><h3>{html.escape(host)}</h3>')
+            for pool in sorted(tree[host].keys()):
+                sample = next(iter(tree[host][pool].values()))[0][0]
+                kind = (sample.topology.kind if sample.topology else "") or "pool"
+                blocks.append(
+                    f'<div class="print-pool"><div class="print-pool-h">'
+                    f"{html.escape(kind)} · <strong>{html.escape(pool)}</strong></div>"
+                )
+                for vdev in sorted(tree[host][pool].keys()):
+                    members = tree[host][pool][vdev]
+                    blocks.append(
+                        f'<div class="print-vdev"><div class="print-vdev-h">{html.escape(vdev)}</div>'
+                        '<table class="print-table compact"><tbody>'
+                    )
+                    for disk, is_risk in sorted(members, key=_disk_sort_key):
+                        findings = _disk_finding_text(disk, is_risk)
+                        mark = ""
+                        if is_risk and getattr(disk, "any_growing", False):
+                            mark = " GROWING"
+                        elif is_risk:
+                            mark = " risk"
+                        row_cls = " attn" if is_risk else ""
+                        blocks.append(
+                            f'<tr class="{row_cls.strip()}">'
+                            '<td class="cb">☐</td>'
+                            f"<td><code>{html.escape(disk.serial or disk.name)}</code></td>"
+                            f"<td>{html.escape(disk.name)}</td>"
+                            f"<td>{html.escape(disk.model)}</td>"
+                            f"<td>{html.escape(mark.strip())}"
+                            + (
+                                f" · {html.escape(findings)}"
+                                if findings
+                                else ""
+                            )
+                            + "</td></tr>"
+                        )
+                    blocks.append("</tbody></table></div>")
+                blocks.append("</div>")
+            blocks.append("</div>")
+
+        if unmapped:
+            blocks.append('<div class="print-host"><h3>Unmapped</h3>')
+            for host in sorted(unmapped.keys()):
+                blocks.append(f'<div class="print-pool"><div class="print-pool-h">{html.escape(host)}</div>')
+                blocks.append('<table class="print-table compact"><tbody>')
+                for disk, is_risk in sorted(unmapped[host], key=_disk_sort_key):
+                    findings = _disk_finding_text(disk, is_risk)
+                    row_cls = " attn" if is_risk else ""
+                    blocks.append(
+                        f'<tr class="{row_cls.strip()}">'
+                        '<td class="cb">☐</td>'
+                        f"<td><code>{html.escape(disk.serial or disk.name)}</code></td>"
+                        f"<td>{html.escape(disk.name)}</td>"
+                        f"<td>{html.escape(disk.model)}</td>"
+                        f"<td>{html.escape(findings)}</td></tr>"
+                    )
+                blocks.append("</tbody></table></div>")
+            blocks.append("</div>")
+
+    blocks.append("</section></article>")
+    return "\n".join(blocks)
+
+
+def _site_footer_html() -> str:
+    """Subtle credit line — brand + year + MIT, no © symbol."""
+    year = datetime.now(timezone.utc).year
+    label = BRAND_FOOTER
+    if not label and BRAND_URL:
+        try:
+            label = (urlparse(BRAND_URL).hostname or "").removeprefix("www.")
+        except Exception:
+            label = ""
+    parts: list[str] = []
+    if label and BRAND_URL:
+        parts.append(
+            f'<a href="{html.escape(BRAND_URL)}">{html.escape(label)}</a>'
+        )
+    elif label:
+        parts.append(html.escape(label))
+    parts.append(str(year))
+    parts.append(html.escape(PRODUCT_NAME))
+    parts.append("MIT")
+    return (
+        '<footer class="site-foot no-print">'
+        + " · ".join(parts)
+        + "</footer>"
+    )
 
 
 def render_html(report: dict[str, Any]) -> str:
@@ -1146,6 +1347,8 @@ def render_html(report: dict[str, Any]) -> str:
 
     product = html.escape(PRODUCT_NAME)
     topo_html = _render_topology_view(report)
+    print_html = _render_print_sheet(report)
+    footer_html = _site_footer_html()
     mapped = int(report.get("topology_mapped") or 0)
     return f"""<!doctype html>
 <html lang="en">
@@ -1314,8 +1517,11 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
   float: right; border: 0; background: transparent; font-size: 1.2rem; cursor: pointer; color: var(--muted);
 }}
 .spark {{ display: block; margin: .4rem 0; background: rgba(0,125,138,.04); border-radius: 8px; }}
+.view-bar {{
+  display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; margin: 0 0 1rem;
+}}
 .view-toggle {{
-  display: inline-flex; gap: .35rem; margin: 0 0 1rem; padding: .2rem;
+  display: inline-flex; gap: .35rem; padding: .2rem;
   background: rgba(0,125,138,.08); border-radius: 999px; border: 1px solid var(--line);
 }}
 .view-toggle button {{
@@ -1326,22 +1532,119 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
 .view-panel {{ display: none; }}
 .view-panel.active {{ display: block; }}
 .sub.topo {{ color: #005f69; }}
-.topo-host {{ margin: 1rem 0 1.5rem; }}
-.topo-host h3 {{ margin: 0 0 .6rem; font-size: 1rem; color: var(--teal); }}
+.topo-level {{
+  display: inline-block; font-size: .65rem; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted); margin-right: .35rem; vertical-align: middle;
+}}
+.topo-count {{
+  display: inline-block; margin-left: .35rem; padding: .05rem .4rem; border-radius: 999px;
+  font-size: .68rem; font-weight: 600; color: var(--muted); background: rgba(18,23,24,.06);
+  vertical-align: middle;
+}}
+.topo-host {{ margin: 1.25rem 0 1.75rem; }}
+.topo-host-h {{
+  margin: 0 0 .65rem; font-size: 1.05rem; color: var(--teal);
+  padding-bottom: .4rem; border-bottom: 2px solid rgba(0,125,138,.35);
+}}
+.topo-host-body {{
+  margin-left: .15rem; padding-left: 1rem;
+  border-left: 3px solid rgba(0,125,138,.28);
+}}
 .topo-pool {{
   background: var(--card); border: 1px solid var(--line); border-radius: 10px;
-  padding: .75rem 1rem; margin-bottom: .75rem;
+  padding: .7rem .9rem .85rem; margin: .7rem 0 .85rem;
+  box-shadow: 0 1px 0 rgba(255,255,255,.6) inset;
 }}
-.topo-pool-h {{ margin-bottom: .5rem; }}
-.topo-vdev {{ margin: .55rem 0 .35rem .5rem; padding-left: .75rem; border-left: 3px solid rgba(0,125,138,.35); }}
-.topo-vdev-h {{ font-size: .8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .25rem; }}
-.topo-vdev ul, .topo-pool > ul {{ list-style: none; margin: 0; padding: 0; }}
-.topo-vdev li, .topo-pool > ul > li {{ padding: .35rem 0; border-bottom: 1px solid rgba(18,23,24,.06); }}
-.topo-vdev li:last-child {{ border-bottom: 0; }}
+.topo-pool-h {{ margin-bottom: .55rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }}
+.topo-pool-name {{ font-size: 1rem; }}
+.topo-pool-body {{
+  margin: 0 0 0 .35rem; padding-left: .9rem;
+  border-left: 2px dashed rgba(0,125,138,.28);
+}}
+.topo-vdev {{
+  margin: .55rem 0 .4rem; padding: .15rem 0 .15rem .85rem;
+  border-left: 3px solid rgba(0,125,138,.42);
+}}
+.topo-vdev-h {{
+  font-size: .78rem; font-weight: 700; color: var(--muted);
+  letter-spacing: .03em; margin-bottom: .3rem;
+}}
+.topo-disks {{ list-style: none; margin: 0; padding: 0; }}
+.topo-disk {{
+  padding: .4rem .5rem .4rem .55rem; margin: .2rem 0;
+  border-radius: 8px; border: 1px solid transparent;
+  border-bottom-color: rgba(18,23,24,.06);
+}}
+.topo-disk:last-child {{ border-bottom-color: transparent; }}
+.topo-disk.risk {{ background: rgba(176,122,0,.06); border-color: rgba(176,122,0,.18); }}
+.topo-disk.growing {{ background: rgba(194,59,46,.07); border-color: rgba(194,59,46,.22); }}
+.topo-disk-main {{ display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; }}
+.topo-serial {{ font-size: .9rem; font-weight: 600; }}
+.topo-disk-meta {{ margin-top: .1rem; }}
+.topo-findings {{ margin-top: .3rem; }}
+.topo-role {{ font-size: .8rem; }}
+.print-sheet {{ max-width: 52rem; }}
+.print-head h1 {{ margin: 0 0 .35rem; font-size: 1.25rem; }}
+.print-meta {{ margin: 0 0 .75rem; color: var(--muted); }}
+.print-hint {{ margin: 0 0 .75rem; color: var(--muted); font-size: .9rem; }}
+.print-actions {{ margin: 0 0 1.25rem; }}
+.print-btn {{
+  border: 1px solid var(--line); background: var(--teal); color: #fff;
+  font: inherit; font-weight: 700; font-size: .85rem; padding: .45rem 1rem;
+  border-radius: 8px; cursor: pointer;
+}}
+.print-btn:hover {{ filter: brightness(1.05); }}
+.print-attn, .print-topo {{ margin: 1.25rem 0; }}
+.print-attn h2, .print-topo h2 {{ margin: 0 0 .5rem; font-size: 1rem; }}
+.print-host {{ margin: 1rem 0 1.25rem; page-break-inside: avoid; }}
+.print-host h3 {{
+  margin: 0 0 .4rem; font-size: .95rem; color: var(--teal);
+  border-bottom: 1px solid var(--line); padding-bottom: .25rem;
+}}
+.print-pool {{ margin: .55rem 0 .7rem .5rem; padding-left: .75rem; border-left: 2px solid rgba(0,125,138,.3); }}
+.print-pool-h {{ font-size: .85rem; margin-bottom: .3rem; }}
+.print-vdev {{ margin: .35rem 0 .45rem .4rem; padding-left: .65rem; border-left: 2px dashed rgba(0,125,138,.28); }}
+.print-vdev-h {{
+  font-size: .72rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); margin-bottom: .2rem;
+}}
+.print-table {{
+  width: 100%; border-collapse: collapse; font-size: .82rem;
+  background: var(--card); border: 1px solid var(--line);
+}}
+.print-table th, .print-table td {{
+  text-align: left; padding: .28rem .4rem; border-bottom: 1px solid var(--line);
+  vertical-align: top;
+}}
+.print-table th {{ font-size: .7rem; text-transform: uppercase; color: var(--muted); }}
+.print-table .cb {{ width: 1.4rem; text-align: center; font-size: 1rem; }}
+.print-table.compact {{ border: 0; background: transparent; }}
+.print-table.compact td {{ border-bottom: 1px solid rgba(18,23,24,.08); padding: .22rem .3rem; }}
+.print-table tr.attn td {{ background: rgba(194,59,46,.07); }}
+.print-find {{ font-size: .75rem; color: var(--muted); }}
 .legend {{ margin-top: 1rem; color: var(--muted); font-size: .85rem; max-width: 70rem; }}
 .legend strong {{ color: var(--text); }}
+.site-foot {{
+  margin: 2rem 0 0; padding-top: .85rem; border-top: 1px solid var(--line);
+  color: var(--muted); font-size: .72rem; letter-spacing: .02em;
+}}
+.site-foot a {{ color: var(--muted); font-weight: 600; text-decoration: none; }}
+.site-foot a:hover {{ color: var(--teal); }}
 @media (max-width: 30rem) {{
   .brand .logo {{ width: 9rem; height: 2.25rem; }}
+}}
+@media print {{
+  body {{
+    background: #fff !important; padding: .6rem; color: #000; font-size: 11pt;
+  }}
+  .brand, .meta, .view-bar, .hist-modal, .no-print, .site-foot {{ display: none !important; }}
+  .view-panel {{ display: none !important; }}
+  #view-print.view-panel {{ display: block !important; }}
+  .print-sheet {{ max-width: none; }}
+  .print-btn, .print-hint {{ display: none !important; }}
+  .print-table tr.attn td {{ background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }}
+  .print-host, .print-pool, .print-attn {{ break-inside: avoid; page-break-inside: avoid; }}
+  a {{ color: inherit; text-decoration: none; }}
 }}
 </style>
 </head>
@@ -1364,9 +1667,12 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
     <a href="/history">history</a>
   </p>
 
-  <div class="view-toggle" role="tablist" aria-label="View mode">
-    <button type="button" class="active" data-view="list" aria-selected="true">Disk list</button>
-    <button type="button" data-view="topology" aria-selected="false">Topology</button>
+  <div class="view-bar">
+    <div class="view-toggle" role="tablist" aria-label="View mode">
+      <button type="button" class="active" data-view="list" aria-selected="true">Disk list</button>
+      <button type="button" data-view="topology" aria-selected="false">Topology</button>
+      <button type="button" data-view="print" aria-selected="false">Print sheet</button>
+    </div>
   </div>
 
   <div id="view-list" class="view-panel active">
@@ -1405,8 +1711,12 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
 
   <div id="view-topology" class="view-panel">
     <h2>Pool topology</h2>
-    <p class="meta">ZFS vdevs and mergerfs/btrfs/snapraid roles — same SMART risk chips, grouped how disks belong together.</p>
+    <p class="meta">Host → pool → vdev, indented. Same SMART risk chips, grouped how disks belong together.</p>
     {topo_html}
+  </div>
+
+  <div id="view-print" class="view-panel">
+    {print_html}
   </div>
 
   <div id="hist-modal" class="hist-modal" role="dialog" aria-modal="true" aria-labelledby="hist-title" hidden>
@@ -1442,7 +1752,15 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
     }});
     var saved = null;
     try {{ saved = localStorage.getItem(key); }} catch (e) {{}}
-    if (saved === 'topology' || saved === 'list') show(saved);
+    if (saved === 'topology' || saved === 'list' || saved === 'print') show(saved);
+
+    var printGo = document.getElementById('print-go');
+    if (printGo) {{
+      printGo.addEventListener('click', function () {{
+        show('print');
+        window.print();
+      }});
+    }}
 
     var modal = document.getElementById('hist-modal');
     var title = document.getElementById('hist-title');
@@ -1515,6 +1833,7 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
     }});
   }})();
   </script>
+  {footer_html}
 </body>
 </html>
 """

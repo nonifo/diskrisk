@@ -1,6 +1,6 @@
 # Diskrisk
 
-**v1.3.0** — find the **right physical disk** when something is dying, and see
+**v1.3.5** — find the **right physical disk** when something is dying, and see
 **whether the problem is getting worse**, without chassis LEDs or vendor GUIs.
 
 Built for DIY / homelab storage: shelves of identical drives, SAS JBODs, TrueNAS
@@ -31,7 +31,7 @@ redundancy. Diskrisk + `diskinfo` close that gap:
 | Tool | Job | Needs Diskrisk? |
 |------|-----|-----------------|
 | **diskinfo** (CLI on the NAS) | Print the pool as a **vdev tree** (mirror / raidz / draid): device → **serial** | **No** — works alone |
-| **Diskrisk** (web / `/json`) | Rank disks by actionable SMART risk and **trend**; toggle **Disk list** ↔ **Topology** | — |
+| **Diskrisk** (web / `/json`) | Rank disks by actionable SMART risk and **trend**; **Disk list** / **Topology** / **Print sheet** | — |
 | **diskinfo --risk** | Same tree **+** SMART/RISK columns from Diskrisk | Optional enrichment |
 
 Typical workflow: open Diskrisk (or `diskinfo --risk`), note the serial with
@@ -58,13 +58,25 @@ Scrutiny ┘              │
 
 Fictional serials — for illustration only.
 
-![Diskrisk web UI](docs/images/diskrisk-ui-demo.png)
+![Diskrisk web UI — disk list](docs/images/diskrisk-ui-demo.png)
 
-*Diskrisk: multi-host risk list with Now / Baseline / GROWING trends.*
+*Disk list: multi-host risk with Now / Baseline / GROWING, Hist, and pool/vdev under serial.*
+
+![Diskrisk topology](docs/images/diskrisk-topology-demo.png)
+
+*Topology: Host → pool → vdev with indentation; risk disks highlighted in place.*
+
+![Diskrisk print sheet](docs/images/diskrisk-print-demo.png)
+
+*Print sheet: checkbox field list for the rack (attention first, then full topology).*
+
+![Diskrisk history](docs/images/diskrisk-history-demo.png)
+
+*History: first seen, sparkline, and each sample with Δ (grew / baseline / same).*
 
 ![diskinfo CLI](docs/images/diskinfo-cli-demo.png)
 
-*`diskinfo`: ZFS vdev tree — serial + SMART + RISK on one row (same-vdev neighbours vs GrowingDefect).*
+*`diskinfo`: ZFS vdev tree (mirror / raidz) — serial + SMART + RISK on one row.*
 
 HTML sources used to regenerate the PNGs: [`docs/examples/`](docs/examples/).
 
@@ -97,7 +109,7 @@ is never overwritten by install or update. One Diskrisk instance can watch
 ### First install
 
 ```bash
-sudo git clone <this-repo-url> /opt/diskrisk
+sudo git clone https://github.com/nonifo/diskrisk.git /opt/diskrisk
 cd /opt/diskrisk
 sudo ./install.sh                 # in-place: links + systemd; keeps existing config
 sudoedit /etc/diskrisk/config.env # BESZEL_USER / BESZEL_PASS / URLs
@@ -133,7 +145,7 @@ sudo ./update.sh          # git pull --ff-only + refresh unit/symlinks + restart
 On a ZFS NAS you can install **just** the CLI — no Beszel, no Python service:
 
 ```bash
-sudo git clone <this-repo-url> /opt/diskrisk
+sudo git clone https://github.com/nonifo/diskrisk.git /opt/diskrisk
 cd /opt/diskrisk
 sudo ./install.sh --diskinfo-only
 diskinfo                  # ZFS vdev tree (default pool: tank)
@@ -145,7 +157,7 @@ Or without install: `./diskinfo/diskinfo.sh` from a checkout.
 If you prefer a disposable checkout and a separate install tree:
 
 ```bash
-git clone <this-repo-url> /tmp/diskrisk-src
+git clone https://github.com/nonifo/diskrisk.git /tmp/diskrisk-src
 cd /tmp/diskrisk-src
 sudo ./install.sh --copy --prefix /opt/diskrisk
 # later: pull in the src tree, then re-run the same install.sh --copy …
@@ -156,7 +168,7 @@ Still: config only in `/etc/diskrisk/config.env`.
 ### No root / laptop try-out
 
 ```bash
-git clone <this-repo-url> diskrisk
+git clone https://github.com/nonifo/diskrisk.git diskrisk
 cd diskrisk
 cp config.example.env config.env
 $EDITOR config.env
@@ -195,7 +207,7 @@ Search order (`DISKRISK_CONFIG` overrides):
 
 1. `$DISKRISK_CONFIG`
 2. `./config.env`
-3. `<repo>/config.env`
+3. `/opt/diskrisk/config.env` (or the directory you cloned into)
 4. `/etc/diskrisk/config.env`
 
 **Environment variables always win over the file.** See `config.example.env`.
@@ -235,6 +247,7 @@ sudo rm -rf /opt/diskrisk
 | `config.example.env` | Template only — real config lives in `/etc/diskrisk/` |
 | `install.sh` | First install / refresh (never overwrites config) |
 | `update.sh` | `git pull` + refresh + restart |
+| `scripts/release-assets.sh` | Source tarball + **SHA-256** `SHA256SUMS` for GitHub Releases |
 | `docs/` | Operator manuals |
 
 ## Docs
