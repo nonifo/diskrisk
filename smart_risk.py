@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-__version__ = "1.3.3"
+__version__ = "1.3.4"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
@@ -767,22 +767,22 @@ def _finding_attr_row(r: DiskRisk, f: Finding) -> str:
     trend_help = TREND_HELP.get(trend, trend)
     lvl = "growing" if f.growing else f.level
     payload = html.escape(json.dumps(_history_payload(r, f), ensure_ascii=False), quote=True)
-    n = len(f.history)
     hist_btn = (
         f'<button type="button" class="hist-btn" data-hist="{payload}" '
         f'title="Open history: when this value appeared and how it changed">'
-        f"History ({n})</button>"
+        f"Hist</button>"
     )
     return (
         f'<tr class="attr {lvl}">'
-        f'<td class="attr-name">{_chip(lvl, short, help_text)} {hist_btn}</td>'
+        f'<td class="attr-name">{_chip(lvl, short, help_text)}</td>'
         f'<td class="num" title="{html.escape(help_text, quote=True)}">'
         f"{html.escape(str(f.value))}</td>"
         f'<td class="num">{html.escape(str(f.first_value if f.first_value is not None else "—"))}</td>'
         f'<td class="num">{html.escape(_fmt_delta(f.delta_total))}</td>'
         f'<td class="num">{html.escape(_fmt_delta(f.delta_prev))}</td>'
-        f'<td><span class="badge {trend_cls}" title="{html.escape(trend_help, quote=True)}">'
+        f'<td class="trend"><span class="badge {trend_cls}" title="{html.escape(trend_help, quote=True)}">'
         f"{trend}</span></td>"
+        f'<td class="hist">{hist_btn}</td>'
         f"</tr>"
     )
 
@@ -1031,9 +1031,12 @@ def render_html(report: dict[str, Any]) -> str:
                 '<table class="attrs"><colgroup>'
                 '<col class="c-a-name"/><col class="c-a-nu"/><col class="c-a-bas"/>'
                 '<col class="c-a-dtot"/><col class="c-a-dprev"/><col class="c-a-trend"/>'
+                '<col class="c-a-hist"/>'
                 "</colgroup><thead><tr>"
-                "<th>Attribute</th><th>Now</th><th>Baseline</th>"
-                "<th>Δ tot</th><th>Δ last</th><th>Trend</th>"
+                '<th class="attr-name">Attribute</th>'
+                '<th class="num">Now</th><th class="num">Baseline</th>'
+                '<th class="num">Δ tot</th><th class="num">Δ last</th>'
+                '<th class="trend">Trend</th><th class="hist">Hist</th>'
                 "</tr></thead><tbody>"
                 + "".join(_finding_attr_row(r, f) for f in r.findings)
                 + "</tbody></table>"
@@ -1241,13 +1244,37 @@ table.attrs {{
   width: 100%;
   border-collapse: collapse;
   font-size: .82rem;
+  table-layout: fixed;
 }}
+table.attrs col.c-a-name {{ width: 22%; }}
+table.attrs col.c-a-nu {{ width: 12%; }}
+table.attrs col.c-a-bas {{ width: 14%; }}
+table.attrs col.c-a-dtot {{ width: 12%; }}
+table.attrs col.c-a-dprev {{ width: 12%; }}
+table.attrs col.c-a-trend {{ width: 16%; }}
+table.attrs col.c-a-hist {{ width: 12%; }}
 table.attrs th, table.attrs td {{
-  padding: .2rem .3rem;
+  padding: .25rem .35rem;
   border: none;
   border-bottom: 1px solid rgba(18,23,24,.06);
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }}
-table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
+table.attrs th.num, table.attrs td.num {{
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}}
+table.attrs th.trend, table.attrs td.trend,
+table.attrs th.hist, table.attrs td.hist {{
+  text-align: center;
+  white-space: nowrap;
+}}
+table.attrs th.attr-name, table.attrs td.attr-name {{
+  text-align: left;
+  white-space: nowrap;
+}}
 .chip {{
   display: inline-block; padding: .1rem .4rem; border-radius: 999px;
   font-size: .72rem; font-weight: 600; cursor: help; }}
@@ -1262,7 +1289,7 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 .badge.stable {{ background: rgba(47,122,85,.14); color: #2f7a55; }}
 .badge.base {{ background: rgba(0,125,138,.12); color: #005f69; }}
 .hist-btn {{
-  margin-left: .35rem; border: 1px solid var(--line); background: rgba(0,125,138,.08);
+  margin: 0; border: 1px solid var(--line); background: rgba(0,125,138,.08);
   color: var(--teal); font: inherit; font-size: .68rem; font-weight: 700;
   padding: .12rem .4rem; border-radius: 6px; cursor: pointer;
 }}
