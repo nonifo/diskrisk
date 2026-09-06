@@ -4,6 +4,7 @@
 
 ### Diskrisk
 - Topology: **box each vdev / role** (mirror, raidz, mergerfs, mdadm, spare) with a clear header — easier to see which disks share a failure domain
+- Docs screenshots refreshed to match live UI (list / topology / print / history)
 
 ## [1.3.6] — 2026-09-06
 

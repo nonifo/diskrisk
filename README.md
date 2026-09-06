@@ -60,11 +60,11 @@ Fictional serials — for illustration only.
 
 ![Diskrisk web UI — disk list](docs/images/diskrisk-ui-demo.png)
 
-*Disk list: multi-host risk with Now / Baseline / GROWING, Hist, and pool/vdev under serial.*
+*Disk list: multi-host risk with Now / Baseline / GROWING, Hist, pool/vdev under serial (v1.3.7).*
 
 ![Diskrisk topology](docs/images/diskrisk-topology-demo.png)
 
-*Topology: Host → pool → vdev; risk disks include the full SMART trend table + Hist.*
+*Topology: Host → pool → **boxed** vdevs (mirror / raidz / …); risk disks include the full SMART trend table + Hist.*
 
 ![Diskrisk print sheet](docs/images/diskrisk-print-demo.png)
 
