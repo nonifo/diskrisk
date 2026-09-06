@@ -3,7 +3,7 @@
 # Manual: docs/diskinfo-manual.md
 set -euo pipefail
 
-VERSION="1.2.1"
+VERSION="1.2.2"
 NO_SMART=0
 WANT_RISK=0          # 1 = force SMART/RISK columns
 LIVE_SMART=0         # 1 = fall back to smartctl when Diskrisk is down
@@ -84,7 +84,8 @@ usage() {
 diskinfo v${VERSION} — ZFS vdev tree (serial → bay). Diskrisk enrichment optional.
 
 Works standalone: no Diskrisk/Beszel required for the core view.
-Shows mirror-N, raidz1/2/3-N, draid-N, special/spares/logs/cache.
+Shows mirror-N, raidz1/2/3-N, draid-N, special/spares/logs/cache,
+and non-pool disks (ext4/btrfs/xfs/…, other ZFS pools, empty).
 
 Usage:
   diskinfo [pool]              # ZFS tree; +RISK if SMART_RISK_URL is set
@@ -319,6 +320,75 @@ fill_smart() {
 
 USED_DISKS=$(zpool status -P "$POOL" 2>/dev/null | awk '/\/dev\/disk\/by-partuuid\// {print $1}' | xargs -r -I {} lsblk -no PKNAME "{}" 2>/dev/null | sort -u | tr '\n' '|' | sed 's/|$//')
 
+# Classify a disk not in the selected pool → state|info for the INFO column.
+# Shows ext4/btrfs/xfs/…, other ZFS pools, EFI-only, or EMPTY.
+classify_other_disk() {
+  local disk="$1"
+  local best_fs="" best_label="" best_mount="" zfs_label="" zfs_seen=0 mixed=0
+  local line cur_type cur_fs cur_label cur_mount show
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    NAME=""; TYPE=""; FSTYPE=""; LABEL=""; MOUNTPOINT=""
+    # shellcheck disable=SC2086
+    eval "$line" 2>/dev/null || continue
+    cur_type="${TYPE:-}"
+    cur_fs="${FSTYPE:-}"
+    cur_label="${LABEL:-}"
+    cur_mount="${MOUNTPOINT:-}"
+    case "$cur_type" in disk|part|crypt|lvm) ;; *) continue ;; esac
+    [[ -z "$cur_fs" ]] && continue
+    case "$cur_fs" in
+      zfs_member)
+        zfs_seen=1
+        [[ -n "$cur_label" ]] && zfs_label="$cur_label"
+        ;;
+      swap|linux_raid_member) ;;
+      vfat|FAT|fat|fat32)
+        if [[ -z "$best_fs" ]]; then
+          best_fs="EFI"
+          best_label="$cur_label"
+          best_mount="$cur_mount"
+        fi
+        ;;
+      *)
+        show=$(echo "$cur_fs" | tr '[:lower:]' '[:upper:]')
+        case "$cur_fs" in
+          crypto_LUKS) show="LUKS" ;;
+          LVM2_member) show="LVM" ;;
+        esac
+        if [[ -n "$best_fs" && "$best_fs" != "EFI" && "$best_fs" != "$show" ]]; then
+          mixed=1
+        fi
+        if [[ -z "$best_fs" || "$best_fs" == "EFI" || -n "$cur_mount" ]]; then
+          best_fs="$show"
+          best_label="$cur_label"
+          best_mount="$cur_mount"
+        fi
+        ;;
+    esac
+  done < <(lsblk -P -o NAME,TYPE,FSTYPE,LABEL,MOUNTPOINT "/dev/$disk" 2>/dev/null)
+
+  local info="" state=""
+  if [[ -n "$best_fs" && "$best_fs" != "EFI" ]]; then
+    state="$best_fs"
+    [[ "$mixed" -eq 1 ]] && state="MIXED"
+    [[ -n "$best_label" ]] && info="label=${best_label}"
+    [[ -n "$best_mount" ]] && info="${info:+$info }mount=${best_mount}"
+    [[ -z "$info" ]] && info="standalone $(echo "$best_fs" | tr '[:upper:]' '[:lower:]')"
+  elif [[ "$zfs_seen" -eq 1 ]]; then
+    state="ZFS"
+    info="pool=${zfs_label:-?} (other)"
+  elif [[ "$best_fs" == "EFI" ]]; then
+    state="EFI"
+    info="ESP/boot only${best_label:+ label=$best_label}"
+  else
+    state="EMPTY"
+    info="no filesystem"
+  fi
+  echo "${state}|${info}"
+}
+
 echo -e "\033[1;34mdiskinfo v${VERSION}\033[0m  pool=\033[1m${POOL}\033[0m  $(date '+%Y-%m-%d %H:%M:%S %Z')"
 if [[ "$NO_SMART" -eq 0 ]]; then
   if load_risk_cache; then
@@ -376,24 +446,45 @@ while IFS= read -r line; do
 done < <(zpool status -P "$POOL" 2>/dev/null)
 
 echo ""
-# Unused header — same columns, last = INFO
+# Disks not in the selected pool — standalone filesystems, other ZFS pools, empty.
+printf "\033[1;33m%s\033[0m\n" "other / standalone"
 print_header "\033[1;33m" "INFO"
 
 while read -r name; do
   [[ -z "$name" ]] && continue
+  # Skip disks already listed under the selected pool.
+  if [[ -n "$USED_DISKS" ]] && echo "$name" | grep -qE "^($USED_DISKS)$"; then
+    continue
+  fi
   serial=$(trim "$(lsblk -dno SERIAL "/dev/$name" 2>/dev/null)")
   size=$(trim "$(lsblk -dno SIZE "/dev/$name" 2>/dev/null)")
   _smart="" _risk=""
   if [[ "$NO_SMART" -eq 0 ]]; then
     fill_smart "$name" "$serial"
   fi
-  print_row "\033[0m" "UNUSED" "/dev/$name" "$serial" "$size" "-" "-" "-" "${_smart:-}" "${_risk:-}" "Not in ZFS pool"
-done < <(lsblk -dno NAME | grep -E '^sd' | { [[ -z "$USED_DISKS" ]] && cat || grep -vE "$USED_DISKS" || true; })
+  cls=$(classify_other_disk "$name")
+  ostate="${cls%%|*}"
+  oinfo="${cls#*|}"
+  col="\033[0m"
+  case "$ostate" in
+    EMPTY) col="\033[0;90m" ;;
+    ZFS|EFI) col="\033[0;36m" ;;
+    EXT2|EXT3|EXT4|BTRFS|XFS|NTFS|EXFAT|F2FS|LUKS|LVM|MIXED) col="\033[0;32m" ;;
+  esac
+  if [[ "$NO_SMART" -eq 0 ]]; then
+    if [[ "$_smart" == "FAILED" ]]; then
+      col="\033[0;31m"
+    elif [[ "$_risk" == *↑* || "$_risk" == GrownDefect=* || "$_risk" == *Pending=* ]]; then
+      col="\033[0;33m"
+    fi
+  fi
+  print_row "$col" "$ostate" "/dev/$name" "$serial" "$size" "-" "-" "-" "${_smart:-}" "${_risk:-}" "$oinfo"
+done < <(lsblk -dno NAME,TYPE | awk '$2=="disk" && $1 !~ /^(zd|loop|nbd|ram|md)/ {print $1}')
 
 echo ""
 if [[ "$NO_SMART" -eq 0 ]]; then
-  echo -e "Legend: \033[0;32mONLINE/AVAIL\033[0m  \033[0;33mrisk/growing\033[0m  \033[0;31mFAILED/FAULTED\033[0m  RISK \".\" = clean  ↑ = growing  ? = SMART unknown"
+  echo -e "Legend: \033[0;32mONLINE/AVAIL/ext4…\033[0m  \033[0;33mrisk/growing\033[0m  \033[0;31mFAILED/FAULTED\033[0m  RISK \".\" = clean  ↑ = growing  ? = SMART unknown"
 else
-  echo -e "Legend: \033[0;32mONLINE/AVAIL\033[0m  \033[0;31mFAULTED\033[0m  — Diskrisk optional: diskinfo --risk"
+  echo -e "Legend: \033[0;32mONLINE/AVAIL/ext4…\033[0m  \033[0;36mother ZFS/EFI\033[0m  \033[0;90mEMPTY\033[0m  — Diskrisk optional: diskinfo --risk"
 fi
 echo "Docs: docs/diskinfo-manual.md"

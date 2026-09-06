@@ -1,6 +1,6 @@
 # SMART risk (Diskrisk) — manual
 
-**Version:** 1.2.1  
+**Version:** 1.2.2  
 **Service:** Diskrisk  
 **Code:** `smart_risk.py`  
 **CLI:** `diskinfo/`  
@@ -256,13 +256,15 @@ machine with the same `SMART_RISK_URL`.
 
 ## 8. Practical interpretation
 
-### ZFS mirrors
+### ZFS vdevs (mirrors and raidz)
 
 1. Open Diskrisk **or** run `diskinfo` on the NAS.
 2. Find GROWING / Pending / GrownDefect.
-3. With `diskinfo`: check the **same `mirror-N`** — is the partner healthy (`.`)?
-4. Partner healthy → replace the bad disk before the partner also drifts.
-5. Both in the mirror bad → **urgent** (double-fault risk).
+3. With `diskinfo`: note the **same vdev** (`mirror-N`, `raidz2-N`, …).
+4. **Mirror:** check the partner — healthy (`.`) → replace the bad disk before
+   the partner also drifts; both bad → **urgent**.
+5. **raidz / draid:** each bad disk in the **same** vdev burns parity budget;
+   several yellow/red under one `raidzN-M` is much worse than spread across vdevs.
 
 ### MultiZone vs Pending
 
@@ -271,7 +273,7 @@ machine with the same `SMART_RISK_URL`.
 | Level | Warn | Critical |
 | Alone, stable | Watch / noise | Plan replacement |
 | GROWING | Watch more closely | Replace soon |
-| Same ZFS mirror as another critical | Raises concern | **Urgent** |
+| Same ZFS vdev as another critical | Raises concern | **Urgent** (esp. mirrors / thin raidz) |
 
 ---
 

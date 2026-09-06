@@ -1,6 +1,6 @@
 # diskinfo — manual
 
-**Version:** 1.2.1  
+**Version:** 1.2.2  
 **Repo:** `diskinfo/diskinfo.sh`  
 **Config:** optional — `DISKINFO_POOL`, and `SMART_RISK_URL` only if you want RISK columns  
 
@@ -11,6 +11,10 @@ structure → device → **serial** → size → RD/WR/CK → PARTUUID.
 
 Groups shown: `mirror-N`, `raidz` / `raidz1`–`raidz3`, `draid` / `draid1`–`draid3`,
 plus `special` / `spares` / `logs` / `cache` / `dedup`.
+
+Below the pool, an **other / standalone** section lists disks **not** in the
+selected pool: **ext4 / btrfs / xfs / …** (with label/mount), other ZFS pools,
+EFI-only, or **EMPTY**.
 
 That alone is enough to find the right bay when you have no status LEDs.
 Diskrisk enrichment (`--risk` / `SMART_RISK_URL`) is optional.
@@ -57,14 +61,14 @@ Fixed-width columns — header and rows share the same widths.
 
 | Column | Meaning |
 |---|---|
-| **ZFS STRUCTURE** | `ONLINE` / `AVAIL` / `UNUSED` (row); vdev headers (`mirror-0`, `raidz2-0`, …) on their own lines |
+| **ZFS STRUCTURE** | `ONLINE` / `AVAIL` (pool rows); vdev headers (`mirror-0`, `raidz2-0`, …); standalone rows use `EXT4` / `BTRFS` / `ZFS` / `EMPTY` / … |
 | **DEVICE** | Kernel name `/dev/sdX` (can change after reboot — trust **SERIAL**) |
 | **SERIAL** | Stable identity |
 | **SIZE** | Capacity |
 | **RD / WR / CK** | ZFS vdev read/write/checksum errors (0 = good). Spares show `-` |
 | **SMART** | `PASSED` / `FAILED` / `?` — preferably from Diskrisk (`state`); else `smartctl -H` |
 | **RISK** | Compact risk attributes (see below). `.` = no risk attributes |
-| **PARTUUID / INFO** | GPT partuuid in the pool, or `Not in ZFS pool` for UNUSED |
+| **PARTUUID / INFO** | GPT partuuid in the pool; for standalone: `label=` / `mount=` / `pool=… (other)` / `no filesystem` |
 
 Colors: green = ONLINE/AVAIL, yellow = risk/growing, red = FAILED/FAULTED.
 
@@ -120,7 +124,30 @@ same count spread across vdevs.
 
 `special` = metadata (often mirrored SSDs).  
 `spares` = hot spares (`AVAIL`).  
-`UNUSED` = present in the chassis but not in the pool.
+
+### other / standalone
+
+Disks **not** in the selected pool:
+
+| STRUCTURE | Meaning |
+|---|---|
+| **EXT4** / **BTRFS** / **XFS** / … | Ordinary Linux (or other) filesystem; INFO has label/mount when set |
+| **LUKS** / **LVM** | Encrypted or LVM physical volume |
+| **MIXED** | More than one data filesystem type on the disk |
+| **ZFS** | `zfs_member` of another pool (`pool=boot-pool (other)`, …) |
+| **EFI** | Only ESP/boot partitions |
+| **EMPTY** | No detected filesystem |
+
+Example:
+
+```
+other / standalone
+  EXT4     /dev/sdx     DEMO-BACKUP-01                 4T        -    -    - …  label=backup mount=/mnt/backup
+  BTRFS    /dev/sdy     DEMO-ARCHIVE-02                8T        -    -    - …  label=archive
+  ZFS      /dev/sda     …                             64G        -    -    - …  pool=boot-pool (other)
+  EMPTY    /dev/sdz     DEMO-NEW-DISK                  1.8T      -    -    - …  no filesystem
+```
+
 
 ## Deploy
 

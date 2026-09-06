@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.2] — 2026-09-06
+
+### diskinfo
+- **other / standalone** section: ext4, btrfs, xfs, LUKS, LVM, etc. with label/mount
+- Other ZFS pools shown as `ZFS` / `pool=… (other)`; blank disks as `EMPTY`
+- Enumerate all `TYPE=disk` devices (sd / nvme / …), not only `sd*`
+
 ## [1.2.1] — 2026-09-06
 
 ### diskinfo
@@ -25,5 +32,6 @@ LLM assistants — see [AI.md](AI.md).
 - Trend history (baseline / Now / GROWING)
 - Git-based install (`install.sh` / `update.sh`) with config under `/etc/diskrisk/`
 
+[1.2.2]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.2
 [1.2.1]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.1
 [1.2.0]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.0
