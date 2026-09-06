@@ -112,6 +112,9 @@ if [[ "$MODE" == "copy" ]]; then
     install -d "$(root "$PREFIX")/branding"
     install -d "$(root "$PREFIX")/deploy"
     install -m 0644 "$REPO_ROOT/smart_risk.py" "$(root "$PREFIX")/smart_risk.py"
+    if [[ -f "$REPO_ROOT/topology_collect.py" ]]; then
+      install -m 0755 "$REPO_ROOT/topology_collect.py" "$(root "$PREFIX")/topology_collect.py"
+    fi
     find "$REPO_ROOT/branding" -maxdepth 1 -type f -exec install -m 0644 {} "$(root "$PREFIX")/branding/" \;
     install -m 0644 "$REPO_ROOT/config.example.env" "$(root "$PREFIX")/config.example.env"
     install -m 0644 "$REPO_ROOT/THIRD_PARTY.md" "$(root "$PREFIX")/THIRD_PARTY.md"

@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-__version__ = "1.2.2"
+__version__ = "1.3.0"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
@@ -92,6 +92,12 @@ BRANDING_DIR = Path(
 PRODUCT_NAME = os.environ.get("DISKRISK_PRODUCT", "Diskrisk")
 BRAND_URL = os.environ.get("DISKRISK_BRAND_URL", "").strip()
 LOGO_FILE = os.environ.get("DISKRISK_LOGO", "logo.svg").strip() or "logo.svg"
+TOPOLOGY_DIR = Path(
+    os.environ.get(
+        "SMART_RISK_TOPOLOGY",
+        str(Path(os.environ.get("SMART_RISK_HISTORY", "/var/lib/diskrisk/history.json")).parent / "topology"),
+    )
+)
 
 # Always actionable when raw/value > 0 (or above threshold).
 CRITICAL = {
@@ -160,6 +166,41 @@ class Finding:
 
 
 @dataclass
+class TopologyInfo:
+    kind: str = ""  # zfs | mergerfs | btrfs | …
+    pool: str = ""
+    vdev: str = ""
+    role: str = ""
+    peers: list[str] = field(default_factory=list)
+    device: str = ""
+    label: str = ""
+    host: str = ""  # topology file host hint
+
+    @property
+    def summary(self) -> str:
+        if not self.pool and not self.vdev:
+            return ""
+        bits = [self.pool] if self.pool else []
+        if self.vdev and self.vdev not in ("root", "single", "data"):
+            bits.append(self.vdev)
+        elif self.vdev == "data" and self.kind == "mergerfs":
+            bits.append("data")
+        elif self.role in ("parity", "hotspare", "spare"):
+            bits.append(self.role)
+        return " / ".join(bits)
+
+    @property
+    def peer_note(self) -> str:
+        n = len(self.peers)
+        if n == 0:
+            return ""
+        if n == 1:
+            return f"peer {self.peers[0]}"
+        # show one example + count
+        return f"{n} peers · e.g. {self.peers[0]}"
+
+
+@dataclass
 class DiskRisk:
     system: str
     name: str
@@ -168,6 +209,7 @@ class DiskRisk:
     state: str
     findings: list[Finding] = field(default_factory=list)
     scrutiny_status: int | None = None
+    topology: TopologyInfo | None = None
 
     @property
     def severity(self) -> int:
@@ -189,6 +231,7 @@ class CleanDisk:
     serial: str
     model: str
     state: str
+    topology: TopologyInfo | None = None
 
 
 def _http_json(url: str, data: dict | None = None, headers: dict | None = None) -> Any:
@@ -248,6 +291,71 @@ def scrutiny_status_by_serial() -> dict[str, int]:
         if sn and st is not None:
             out[sn] = int(st)
     return out
+
+
+def _norm_serial(s: str) -> str:
+    return "".join((s or "").split()).upper()
+
+
+def load_topology() -> dict[str, TopologyInfo]:
+    """Load serial → TopologyInfo from SMART_RISK_TOPOLOGY/*.json (or a single file)."""
+    out: dict[str, TopologyInfo] = {}
+    path = TOPOLOGY_DIR
+    files: list[Path] = []
+    if path.is_file():
+        files = [path]
+    elif path.is_dir():
+        files = sorted(path.glob("*.json"))
+    else:
+        return out
+
+    for fp in files:
+        try:
+            data = json.loads(fp.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        host = (data.get("host") or fp.stem or "").strip()
+        disks = data.get("disks") or {}
+        if not isinstance(disks, dict):
+            continue
+        for serial, meta in disks.items():
+            if not isinstance(meta, dict):
+                continue
+            key = _norm_serial(serial)
+            if not key:
+                continue
+            peers = meta.get("peers") or []
+            if not isinstance(peers, list):
+                peers = []
+            info = TopologyInfo(
+                kind=str(meta.get("kind") or ""),
+                pool=str(meta.get("pool") or ""),
+                vdev=str(meta.get("vdev") or ""),
+                role=str(meta.get("role") or ""),
+                peers=[_norm_serial(p) for p in peers if p],
+                device=str(meta.get("device") or ""),
+                label=str(meta.get("label") or ""),
+                host=host,
+            )
+            # Prefer richer entries (more peers / non-empty pool)
+            prev = out.get(key)
+            if prev is None or (len(info.peers) >= len(prev.peers) and info.pool):
+                out[key] = info
+    return out
+
+
+def _lookup_topology(topo: dict[str, TopologyInfo], serial: str) -> TopologyInfo | None:
+    key = _norm_serial(serial)
+    if not key:
+        return None
+    if key in topo:
+        return topo[key]
+    # prefix / containment match for truncated SMART serials
+    for k, info in topo.items():
+        if key.startswith(k) or k.startswith(key):
+            if min(len(key), len(k)) >= 8:
+                return info
+    return None
 
 
 def _raw_int(attr: dict) -> int | None:
@@ -413,6 +521,7 @@ def build_report() -> dict[str, Any]:
     systems = {s["id"]: s.get("name") or s["id"] for s in beszel_records(token, "systems")}
     devices = beszel_records(token, "smart_devices")
     scr = scrutiny_status_by_serial()
+    topo = load_topology()
 
     risks: list[DiskRisk] = []
     clean: list[CleanDisk] = []
@@ -426,8 +535,11 @@ def build_report() -> dict[str, Any]:
             model=d.get("model") or "",
             state=d.get("state") or "",
             findings=findings,
-            scrutiny_status=scr.get(serial),
+            scrutiny_status=scr.get(serial) if serial else None,
+            topology=_lookup_topology(topo, serial),
         )
+        if risk.scrutiny_status is None and serial:
+            risk.scrutiny_status = scr.get(_norm_serial(serial))
         if risk.severity or risk.findings:
             risks.append(risk)
         else:
@@ -438,6 +550,7 @@ def build_report() -> dict[str, Any]:
                     serial=risk.serial,
                     model=risk.model,
                     state=risk.state,
+                    topology=risk.topology,
                 )
             )
 
@@ -455,6 +568,8 @@ def build_report() -> dict[str, Any]:
         "growing_count": growing_count,
         "scrutiny_flagged": sum(1 for r in risks if (r.scrutiny_status or 0) >= 2),
         "history_path": str(HISTORY_PATH),
+        "topology_path": str(TOPOLOGY_DIR),
+        "topology_mapped": sum(1 for r in risks if r.topology) + sum(1 for c in clean if c.topology),
     }
 
 
@@ -555,6 +670,22 @@ def _serialize_finding(f: Finding) -> dict[str, Any]:
     }
 
 
+def _serialize_topo(t: TopologyInfo | None) -> dict[str, Any] | None:
+    if t is None:
+        return None
+    return {
+        "kind": t.kind,
+        "pool": t.pool,
+        "vdev": t.vdev,
+        "role": t.role,
+        "peers": t.peers,
+        "device": t.device,
+        "label": t.label,
+        "host": t.host,
+        "summary": t.summary,
+    }
+
+
 def _serialize_risk(r: DiskRisk) -> dict[str, Any]:
     return {
         "system": r.system,
@@ -566,6 +697,7 @@ def _serialize_risk(r: DiskRisk) -> dict[str, Any]:
         "severity": r.severity,
         "growing": r.any_growing,
         "findings": [_serialize_finding(f) for f in r.findings],
+        "topology": _serialize_topo(r.topology),
     }
 
 
@@ -576,6 +708,7 @@ def _serialize_clean(c: CleanDisk) -> dict[str, Any]:
         "serial": c.serial,
         "model": c.model,
         "state": c.state,
+        "topology": _serialize_topo(c.topology),
     }
 
 
@@ -587,9 +720,114 @@ def serialize_report(report: dict[str, Any]) -> dict[str, Any]:
         "growing_count": report.get("growing_count", 0),
         "scrutiny_flagged": report["scrutiny_flagged"],
         "history_path": report.get("history_path"),
+        "topology_path": report.get("topology_path"),
+        "topology_mapped": report.get("topology_mapped", 0),
         "risks": [_serialize_risk(r) for r in report["risks"]],
         "clean_disks": [_serialize_clean(c) for c in report.get("clean_disks") or []],
     }
+
+
+def _disk_risk_chip(r: DiskRisk | CleanDisk, is_risk: bool) -> str:
+    if not is_risk:
+        return '<span class="chip ok">clean</span>'
+    assert isinstance(r, DiskRisk)
+    if r.any_growing:
+        return '<span class="chip growing">GROWING</span>'
+    if r.severity >= 2:
+        return '<span class="chip critical">risk</span>'
+    if r.severity == 1:
+        return '<span class="chip warn">warn</span>'
+    return '<span class="chip ok">ok</span>'
+
+
+def _render_topology_view(report: dict[str, Any]) -> str:
+    """Group disks by host → pool → vdev for the Topology view."""
+    by_serial: dict[str, tuple[Any, bool]] = {}
+    for r in report.get("risks") or []:
+        by_serial[_norm_serial(r.serial) or r.name] = (r, True)
+    for c in report.get("clean_disks") or []:
+        key = _norm_serial(c.serial) or c.name
+        by_serial.setdefault(key, (c, False))
+
+    # host → pool → vdev → [entries]
+    tree: dict[str, dict[str, dict[str, list[tuple[Any, bool]]]]] = {}
+    unmapped: dict[str, list[tuple[Any, bool]]] = {}
+
+    for _key, (disk, is_risk) in by_serial.items():
+        host = disk.system
+        t = disk.topology
+        if not t or not t.pool:
+            unmapped.setdefault(host, []).append((disk, is_risk))
+            continue
+        pool = t.pool
+        vdev = t.vdev or t.role or "members"
+        tree.setdefault(host, {}).setdefault(pool, {}).setdefault(vdev, []).append((disk, is_risk))
+
+    blocks: list[str] = []
+    if not tree and not unmapped:
+        return '<p class="muted">No topology data yet. Run <code>topology_collect.py</code> on each storage host and place JSON under the topology directory.</p>'
+
+    for host in sorted(tree.keys()):
+        blocks.append(f'<section class="topo-host"><h3>{html.escape(host)}</h3>')
+        for pool in sorted(tree[host].keys()):
+            # kind from first disk
+            sample = next(iter(tree[host][pool].values()))[0][0]
+            kind = (sample.topology.kind if sample.topology else "") or ""
+            blocks.append(
+                f'<div class="topo-pool"><div class="topo-pool-h">'
+                f'<span class="chip kind">{html.escape(kind or "pool")}</span> '
+                f'<strong>{html.escape(pool)}</strong></div>'
+            )
+            for vdev in sorted(tree[host][pool].keys()):
+                members = tree[host][pool][vdev]
+                blocks.append(f'<div class="topo-vdev"><div class="topo-vdev-h">{html.escape(vdev)}</div><ul>')
+                # sort: growing/risk first
+                def _sk(item: tuple[Any, bool]) -> tuple:
+                    d, ir = item
+                    grow = int(getattr(d, "any_growing", False)) if ir else 0
+                    sev = int(getattr(d, "severity", 0)) if ir else 0
+                    return (-grow, -sev, d.serial or d.name)
+
+                for disk, is_risk in sorted(members, key=_sk):
+                    chip = _disk_risk_chip(disk, is_risk)
+                    role = ""
+                    if disk.topology and disk.topology.role:
+                        role = f' <span class="muted">({html.escape(disk.topology.role)})</span>'
+                    findings = ""
+                    if is_risk and getattr(disk, "findings", None):
+                        parts = []
+                        for f in disk.findings[:3]:
+                            short = SHORT.get(f.name, f.name)
+                            arrow = "↑" if f.growing else ""
+                            parts.append(f"{short}={f.value}{arrow}")
+                        if parts:
+                            findings = f' <span class="muted">{" ".join(html.escape(p) for p in parts)}</span>'
+                    blocks.append(
+                        "<li>"
+                        f"{chip} <code>{html.escape(disk.serial or disk.name)}</code>"
+                        f"{role}"
+                        f'<div class="sub">{html.escape(disk.name)} · {html.escape(disk.model)}</div>'
+                        f"{findings}"
+                        "</li>"
+                    )
+                blocks.append("</ul></div>")
+            blocks.append("</div>")
+        blocks.append("</section>")
+
+    if unmapped:
+        blocks.append('<section class="topo-host"><h3>Unmapped (SMART only)</h3>')
+        for host in sorted(unmapped.keys()):
+            blocks.append(f'<div class="topo-pool"><div class="topo-pool-h"><strong>{html.escape(host)}</strong></div><ul>')
+            for disk, is_risk in unmapped[host]:
+                chip = _disk_risk_chip(disk, is_risk)
+                blocks.append(
+                    f"<li>{chip} <code>{html.escape(disk.serial or disk.name)}</code>"
+                    f'<div class="sub">{html.escape(disk.name)} · {html.escape(disk.model)}</div></li>'
+                )
+            blocks.append("</ul></div>")
+        blocks.append("</section>")
+
+    return "\n".join(blocks)
 
 
 def render_html(report: dict[str, Any]) -> str:
@@ -642,10 +880,19 @@ def render_html(report: dict[str, Any]) -> str:
             badge += ' <span class="badge stable">stable</span>'
         elif (not r.any_growing) and r.findings and all(f.samples < 2 for f in r.findings):
             badge += ' <span class="badge base">baseline</span>'
+        topo_sub = ""
+        if r.topology and r.topology.summary:
+            peer = html.escape(r.topology.peer_note)
+            topo_sub = (
+                f"<div class='sub topo'>{html.escape(r.topology.kind)} · "
+                f"{html.escape(r.topology.summary)}"
+                + (f" · {peer}" if peer else "")
+                + "</div>"
+            )
         risk_rows.append(
             "<tr class='{sev}'>"
             "<td>{system}{badge}</td>"
-            "<td><code>{serial}</code><div class='sub'>{name}</div></td>"
+            "<td><code>{serial}</code><div class='sub'>{name}</div>{topo}</td>"
             "<td>{model}</td>"
             "<td>{state}</td>"
             "<td>{scr}</td>"
@@ -656,6 +903,7 @@ def render_html(report: dict[str, Any]) -> str:
                 badge=badge,
                 serial=html.escape(r.serial or r.name),
                 name=html.escape(r.name),
+                topo=topo_sub,
                 model=html.escape(r.model),
                 state=html.escape(r.state),
                 scr=html.escape(scr),
@@ -665,10 +913,19 @@ def render_html(report: dict[str, Any]) -> str:
 
     clean_rows = []
     for c in report.get("clean_disks") or []:
+        topo_sub = ""
+        if c.topology and c.topology.summary:
+            peer = html.escape(c.topology.peer_note)
+            topo_sub = (
+                f"<div class='sub topo'>{html.escape(c.topology.kind)} · "
+                f"{html.escape(c.topology.summary)}"
+                + (f" · {peer}" if peer else "")
+                + "</div>"
+            )
         clean_rows.append(
             "<tr class='ok'>"
             "<td>{system}</td>"
-            "<td><code>{serial}</code><div class='sub'>{name}</div></td>"
+            "<td><code>{serial}</code><div class='sub'>{name}</div>{topo}</td>"
             "<td>{model}</td>"
             "<td>{state}</td>"
             "<td class='muted'>—</td>"
@@ -677,6 +934,7 @@ def render_html(report: dict[str, Any]) -> str:
                 system=html.escape(c.system),
                 serial=html.escape(c.serial or c.name),
                 name=html.escape(c.name),
+                topo=topo_sub,
                 model=html.escape(c.model),
                 state=html.escape(c.state),
             )
@@ -703,6 +961,8 @@ def render_html(report: dict[str, Any]) -> str:
     </thead>"""
 
     product = html.escape(PRODUCT_NAME)
+    topo_html = _render_topology_view(report)
+    mapped = int(report.get("topology_mapped") or 0)
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -813,11 +1073,37 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
 .chip.critical, .chip.growing {{ background: rgba(194,59,46,.12); color: var(--crit); }}
 .chip.warn {{ background: rgba(176,122,0,.14); color: #8a5f00; }}
 .chip.info {{ background: rgba(0,125,138,.1); color: #005f69; }}
+.chip.ok {{ background: rgba(47,122,85,.12); color: #2f7a55; }}
+.chip.kind {{ background: rgba(0,125,138,.12); color: #005f69; text-transform: uppercase; letter-spacing: .04em; }}
 .badge {{ display: inline-block; margin-left: .35rem; padding: .05rem .35rem; border-radius: 6px;
   font-size: .68rem; font-weight: 700; letter-spacing: .03em; vertical-align: middle; }}
 .badge.grow, .badge.growing {{ background: rgba(196,74,50,.18); color: #8a3222; }}
 .badge.stable {{ background: rgba(47,122,85,.14); color: #2f7a55; }}
 .badge.base {{ background: rgba(0,125,138,.12); color: #005f69; }}
+.view-toggle {{
+  display: inline-flex; gap: .35rem; margin: 0 0 1rem; padding: .2rem;
+  background: rgba(0,125,138,.08); border-radius: 999px; border: 1px solid var(--line);
+}}
+.view-toggle button {{
+  border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 600;
+  font-size: .82rem; padding: .35rem .9rem; border-radius: 999px; cursor: pointer;
+}}
+.view-toggle button.active {{ background: var(--card); color: var(--teal); box-shadow: 0 1px 2px rgba(0,0,0,.06); }}
+.view-panel {{ display: none; }}
+.view-panel.active {{ display: block; }}
+.sub.topo {{ color: #005f69; }}
+.topo-host {{ margin: 1rem 0 1.5rem; }}
+.topo-host h3 {{ margin: 0 0 .6rem; font-size: 1rem; color: var(--teal); }}
+.topo-pool {{
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+  padding: .75rem 1rem; margin-bottom: .75rem;
+}}
+.topo-pool-h {{ margin-bottom: .5rem; }}
+.topo-vdev {{ margin: .55rem 0 .35rem .5rem; padding-left: .75rem; border-left: 3px solid rgba(0,125,138,.35); }}
+.topo-vdev-h {{ font-size: .8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .25rem; }}
+.topo-vdev ul, .topo-pool > ul {{ list-style: none; margin: 0; padding: 0; }}
+.topo-vdev li, .topo-pool > ul > li {{ padding: .35rem 0; border-bottom: 1px solid rgba(18,23,24,.06); }}
+.topo-vdev li:last-child {{ border-bottom: 0; }}
 .legend {{ margin-top: 1rem; color: var(--muted); font-size: .85rem; max-width: 70rem; }}
 .legend strong {{ color: var(--text); }}
 @media (max-width: 30rem) {{
@@ -836,12 +1122,19 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     {len(report['risks'])} with findings ·
     <strong>{report.get('growing_count', 0)} growing</strong> ·
     {report['clean']} clean ·
-    Scrutiny status≥2: {report['scrutiny_flagged']}<br/>
+    Scrutiny status≥2: {report['scrutiny_flagged']} ·
+    topology mapped: {mapped}<br/>
     Source: Beszel attributes{(' + Scrutiny' if SCRUTINY_URL else '')} ·
     <a href="/json">JSON</a> ·
     <a href="/text">text</a>
   </p>
 
+  <div class="view-toggle" role="tablist" aria-label="View mode">
+    <button type="button" class="active" data-view="list" aria-selected="true">Disk list</button>
+    <button type="button" data-view="topology" aria-selected="false">Topology</button>
+  </div>
+
+  <div id="view-list" class="view-panel active">
   <h2>Risk disks</h2>
   <table class="disk-table">
     {table_head}
@@ -871,7 +1164,39 @@ table.attrs .num {{ text-align: right; font-variant-numeric: tabular-nums; }}
     <strong>Warn:</strong> UDMA_CRC (cable/HBA), MultiZone —
     Seagate Raw_Read / Seek are flagged only if norm ≤ thresh.<br/>
     History: <code>{html.escape(str(report.get('history_path') or ''))}</code>.
+    Topology dir: <code>{html.escape(str(report.get('topology_path') or ''))}</code>.
   </p>
+  </div>
+
+  <div id="view-topology" class="view-panel">
+    <h2>Pool topology</h2>
+    <p class="meta">ZFS vdevs and mergerfs/btrfs/snapraid roles — same SMART risk chips, grouped how disks belong together.</p>
+    {topo_html}
+  </div>
+
+  <script>
+  (function () {{
+    var buttons = document.querySelectorAll('.view-toggle button');
+    var key = 'diskrisk-view';
+    function show(name) {{
+      document.querySelectorAll('.view-panel').forEach(function (el) {{
+        el.classList.toggle('active', el.id === 'view-' + name);
+      }});
+      buttons.forEach(function (btn) {{
+        var on = btn.getAttribute('data-view') === name;
+        btn.classList.toggle('active', on);
+        btn.setAttribute('aria-selected', on ? 'true' : 'false');
+      }});
+      try {{ localStorage.setItem(key, name); }} catch (e) {{}}
+    }}
+    buttons.forEach(function (btn) {{
+      btn.addEventListener('click', function () {{ show(btn.getAttribute('data-view')); }});
+    }});
+    var saved = null;
+    try {{ saved = localStorage.getItem(key); }} catch (e) {{}}
+    if (saved === 'topology' || saved === 'list') show(saved);
+  }})();
+  </script>
 </body>
 </html>
 """

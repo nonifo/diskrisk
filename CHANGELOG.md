@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.3.0] — 2026-09-06
+
+### Diskrisk
+- **View toggle:** keep the classic **Disk list**, or switch to **Topology**
+  (host → pool → vdev / mergerfs roles)
+- Ingest per-host topology JSON (`SMART_RISK_TOPOLOGY`, from `topology_collect.py`)
+- List view shows pool/vdev subtitle under serial when mapped
+
+### topology_collect.py
+- Collect ZFS (mirror/raidz/draid) and mergerfs+btrfs (+ snapraid parity/hotspare)
+
 ## [1.2.2] — 2026-09-06
 
 ### diskinfo
@@ -32,6 +43,7 @@ LLM assistants — see [AI.md](AI.md).
 - Trend history (baseline / Now / GROWING)
 - Git-based install (`install.sh` / `update.sh`) with config under `/etc/diskrisk/`
 
+[1.3.0]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.0
 [1.2.2]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.2
 [1.2.1]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.1
 [1.2.0]: https://github.com/nonifo/diskrisk/releases/tag/v1.2.0

@@ -1,6 +1,6 @@
 # Diskrisk
 
-**v1.2.2** — find the **right physical disk** when something is dying, and see
+**v1.3.0** — find the **right physical disk** when something is dying, and see
 **whether the problem is getting worse**, without chassis LEDs or vendor GUIs.
 
 Built for DIY / homelab storage: shelves of identical drives, SAS JBODs, TrueNAS
