@@ -40,12 +40,12 @@ table.disk-table {
   width: 100%; border-collapse: collapse; background: var(--card);
   border: 1px solid var(--line); border-radius: 10px; overflow: hidden; table-layout: fixed;
 }
-table.disk-table col.c-host { width: 12%; }
-table.disk-table col.c-serial { width: 18%; }
-table.disk-table col.c-model { width: 18%; }
-table.disk-table col.c-smart { width: 8%; }
-table.disk-table col.c-scr { width: 8%; }
-table.disk-table col.c-attrs { width: 36%; }
+table.disk-table col.c-host { width: 11%; }
+table.disk-table col.c-serial { width: 17%; }
+table.disk-table col.c-model { width: 14%; }
+table.disk-table col.c-smart { width: 7%; }
+table.disk-table col.c-scr { width: 7%; }
+table.disk-table col.c-attrs { width: 44%; }
 table.disk-table th, table.disk-table td {
   padding: .55rem .65rem; text-align: left; vertical-align: top;
   border-bottom: 1px solid var(--line); word-break: break-word;
@@ -62,18 +62,20 @@ tr.ok td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 code { font-size: .85rem; }
 .muted { color: var(--muted); }
 table.attrs { width: 100%; border-collapse: collapse; font-size: .82rem; table-layout: fixed; }
-table.attrs col.c-a-name { width: 22%; }
-table.attrs col.c-a-nu { width: 12%; }
-table.attrs col.c-a-bas { width: 14%; }
-table.attrs col.c-a-dtot { width: 12%; }
-table.attrs col.c-a-dprev { width: 12%; }
-table.attrs col.c-a-trend { width: 16%; }
-table.attrs col.c-a-hist { width: 12%; }
+table.attrs col.c-a-name { width: 20%; }
+table.attrs col.c-a-nu { width: 11%; }
+table.attrs col.c-a-bas { width: 13%; }
+table.attrs col.c-a-dtot { width: 11%; }
+table.attrs col.c-a-dprev { width: 11%; }
+table.attrs col.c-a-trend { width: 18%; }
+table.attrs col.c-a-hist { width: 16%; }
 table.attrs th, table.attrs td {
   padding: .25rem .35rem; border: none; border-bottom: 1px solid rgba(18,23,24,.06); vertical-align: middle;
+  overflow: hidden; text-overflow: ellipsis;
 }
 table.attrs th.num, table.attrs td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 table.attrs th.trend, table.attrs td.trend, table.attrs th.hist, table.attrs td.hist { text-align: center; white-space: nowrap; }
+table.attrs th.attr-name, table.attrs td.attr-name { text-align: left; white-space: nowrap; }
 .chip {
   display: inline-block; padding: .1rem .4rem; border-radius: 999px;
   font-size: .72rem; font-weight: 600;
@@ -91,8 +93,8 @@ table.attrs th.trend, table.attrs td.trend, table.attrs th.hist, table.attrs td.
 .badge.base { background: rgba(0,125,138,.12); color: #005f69; }
 .hist-btn {
   margin: 0; border: 1px solid var(--line); background: rgba(0,125,138,.08);
-  color: var(--teal); font: inherit; font-size: .68rem; font-weight: 700;
-  padding: .12rem .4rem; border-radius: 6px; cursor: pointer;
+  color: var(--teal); font: inherit; font-size: .72rem; font-weight: 700;
+  padding: .15rem .55rem; border-radius: 6px; cursor: pointer;
 }
 .view-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; margin: 0 0 1rem; }
 .view-toggle {
@@ -207,6 +209,7 @@ table.attrs th.trend, table.attrs td.trend, table.attrs th.hist, table.attrs td.
     <p class="product">Diskrisk</p>
   </header>
   <p class="meta">
+    Diskrisk v1.3.5 ·
     2026-09-06 12:00:00Z ·
     48 disks ·
     3 with findings ·
@@ -317,6 +320,7 @@ table.attrs th.trend, table.attrs td.trend, table.attrs th.hist, table.attrs td.
     </tbody>
   </table>
 
+  <div id="clean-section">
   <h2>Clean disks</h2>
   <table class="disk-table">
     <colgroup>
@@ -335,16 +339,19 @@ table.attrs th.trend, table.attrs td.trend, table.attrs th.hist, table.attrs td.
       <tr class="ok"><td>nas-office</td><td><code>DEMO-CLEAN-003</code><div class="sub">/dev/sdc</div><div class="sub topo">zfs · tank / raidz2-0</div></td><td>Example SSD 240G</td><td>PASSED</td><td class="muted">—</td><td class="muted">no risk attributes · clean</td></tr>
     </tbody>
   </table>
+  </div>
 
   <p class="legend">
     <strong>How to read the trend columns:</strong>
-    each risk attribute has <em>Now</em>, <em>Baseline</em>, <em>Δ tot</em>, <em>Δ last</em>, and
-    <em>Trend</em> (<span class="badge base">baseline</span> =
-    first sample,
-    <span class="badge stable">stable</span> =
-    same as baseline,
-    <span class="badge grow">GROWING</span> =
-    acute — the value increased).
+    each risk attribute has <em>Now</em>, <em>Baseline</em>, <em>Δ tot</em>, <em>Δ last</em>,
+    <em>Trend</em>, and <em>Hist</em> (sparkline + when it grew).
+    <span class="badge base">baseline</span> = first sample,
+    <span class="badge stable">stable</span> = same as baseline,
+    <span class="badge grow">GROWING</span> = acute — the value increased.<br/><br/>
+    <strong>Critical:</strong> Realloc / Pending / OfflineUnc / GrownDefect —
+    <strong>Warn:</strong> UDMA_CRC (cable/HBA), MultiZone.<br/>
+    History: <code>/var/lib/diskrisk/history.json</code>.
+    Topology dir: <code>/var/lib/diskrisk/topology</code>.
   </p>
   </div>
 
