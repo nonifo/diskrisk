@@ -1,6 +1,6 @@
 # SMART risk (Diskrisk) — manual
 
-**Version:** 1.2.0  
+**Version:** 1.2.1  
 **Service:** Diskrisk  
 **Code:** `smart_risk.py`  
 **CLI:** `diskinfo/`  

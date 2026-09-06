@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
-__version__ = "1.2.0"
+__version__ = "1.2.1"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 

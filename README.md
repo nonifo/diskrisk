@@ -1,6 +1,6 @@
 # Diskrisk
 
-**v1.2.0** — find the **right physical disk** when something is dying, and see
+**v1.2.1** — find the **right physical disk** when something is dying, and see
 **whether the problem is getting worse**, without chassis LEDs or vendor GUIs.
 
 Built for DIY / homelab storage: shelves of identical drives, SAS JBODs, TrueNAS
@@ -18,8 +18,9 @@ When a disk starts to fail you usually need three answers at once:
 
 1. **Which drive is it?** — not `sdf`, but a stable **serial** you can read on
    the label when you are standing in front of the rack.
-2. **Who is its partner?** — in a ZFS mirror, the pool survives one failure;
-   two bad disks in the **same** `mirror-N` is an emergency.
+2. **Who shares its vdev?** — mirror partner, or the other disks in the same
+   `raidz2-N` / `draid-N`. Several bad disks in **one** vdev is much worse than
+   the same count spread across vdevs.
 3. **Is it getting worse?** — SMART often still says **PASSED** while pending
    sectors or a grown-defect list are already climbing.
 
@@ -29,7 +30,7 @@ redundancy. Diskrisk + `diskinfo` close that gap:
 
 | Tool | Job | Needs Diskrisk? |
 |------|-----|-----------------|
-| **diskinfo** (CLI on the NAS) | Print the pool as a **mirror tree**: device → **serial** | **No** — works alone |
+| **diskinfo** (CLI on the NAS) | Print the pool as a **vdev tree** (mirror / raidz / draid): device → **serial** | **No** — works alone |
 | **Diskrisk** (web / `/json`) | Rank disks by actionable SMART risk and **trend** | — |
 | **diskinfo --risk** | Same tree **+** SMART/RISK columns from Diskrisk | Optional enrichment |
 
@@ -37,7 +38,8 @@ Typical workflow: open Diskrisk (or `diskinfo --risk`), note the serial with
 `GrownDefect=815↑` / `Pending=…`, walk to the chassis, match the sticker, replace
 that drive — and check that its mirror partner is still clean (`.`).
 
-Even without Diskrisk, `diskinfo` alone answers “which serial is in `mirror-1`?”.
+Even without Diskrisk, `diskinfo` alone answers “which serial is in `mirror-1`
+/ `raidz2-0`?”.
 
 **Before a disk ever joins the pool**, burn it in (SMART short → long →
 badblocks → long again) so you have a **pre/post SMART** baseline. See
@@ -48,7 +50,7 @@ those counters **keep growing in production**.
 Beszel ──┐
          ├──► smart_risk.py (:8091) ──► web /json /text
 Scrutiny ┘              │
-                        └──► diskinfo (ZFS mirrors + RISK)
+                        └──► diskinfo (ZFS vdevs + RISK)
 ```
 
 
@@ -62,7 +64,7 @@ Fictional serials — for illustration only.
 
 ![diskinfo CLI](docs/images/diskinfo-cli-demo.png)
 
-*`diskinfo`: ZFS mirror tree — serial + SMART + RISK on one row (`mirror-1` partner vs GrowingDefect).*
+*`diskinfo`: ZFS vdev tree — serial + SMART + RISK on one row (same-vdev neighbours vs GrowingDefect).*
 
 HTML sources used to regenerate the PNGs: [`docs/examples/`](docs/examples/).
 
@@ -134,7 +136,7 @@ On a ZFS NAS you can install **just** the CLI — no Beszel, no Python service:
 sudo git clone <this-repo-url> /opt/diskrisk
 cd /opt/diskrisk
 sudo ./install.sh --diskinfo-only
-diskinfo                  # ZFS mirror tree (default pool: tank)
+diskinfo                  # ZFS vdev tree (default pool: tank)
 diskinfo --risk           # optional: enrich if Diskrisk is reachable
 ```
 
@@ -227,7 +229,7 @@ sudo rm -rf /opt/diskrisk
 | Path | What |
 |------|------|
 | `smart_risk.py` | Diskrisk HTTP service (HTML + `/json` + `/text`) |
-| `diskinfo/` | CLI: ZFS hierarchy + SMART/RISK columns |
+| `diskinfo/` | CLI: ZFS vdev tree (mirror/raidz/draid) + SMART/RISK columns |
 | `branding/` | Optional UI assets |
 | `config.example.env` | Template only — real config lives in `/etc/diskrisk/` |
 | `install.sh` | First install / refresh (never overwrites config) |

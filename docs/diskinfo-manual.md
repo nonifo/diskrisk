@@ -1,13 +1,16 @@
 # diskinfo — manual
 
-**Version:** 1.2.0  
+**Version:** 1.2.1  
 **Repo:** `diskinfo/diskinfo.sh`  
 **Config:** optional — `DISKINFO_POOL`, and `SMART_RISK_URL` only if you want RISK columns  
 
 ## Standalone
 
-**diskinfo does not require Diskrisk.** Core mode is a ZFS mirror tree:
+**diskinfo does not require Diskrisk.** Core mode is a ZFS **vdev tree**:
 structure → device → **serial** → size → RD/WR/CK → PARTUUID.
+
+Groups shown: `mirror-N`, `raidz` / `raidz1`–`raidz3`, `draid` / `draid1`–`draid3`,
+plus `special` / `spares` / `logs` / `cache` / `dedup`.
 
 That alone is enough to find the right bay when you have no status LEDs.
 Diskrisk enrichment (`--risk` / `SMART_RISK_URL`) is optional.
@@ -17,16 +20,16 @@ Diskrisk enrichment (`--risk` / `SMART_RISK_URL`) is optional.
 On DIY NAS builds, drives often sit in a cage **without status LEDs**. Kernel
 names (`/dev/sdf`) change after reboot. `diskinfo` is the map from **pool
 topology → serial on the drive label**, with SMART/risk on the same line so you
-do not pull the healthy mirror partner by mistake.
+do not pull the wrong tray (healthy mirror partner, or a disk in another vdev).
 
 ## What it is
 
-`diskinfo` shows the **ZFS pool as a mirror tree**: which physical disk belongs
-to which `mirror-N`, with serial, size, I/O error counters (RD/WR/CK), and
-PARTUUID.
+`diskinfo` shows the **ZFS pool as a vdev tree**: which physical disk belongs
+to which `mirror-N` / `raidz2-N` / …, with serial, size, I/O error counters
+(RD/WR/CK), and PARTUUID.
 
 With Diskrisk enrichment it also adds **SMART** and **RISK** on the same row,
-so you see mirror partners **and** findings without switching tools.
+so you see vdev neighbours **and** findings without switching tools.
 
 ## Commands
 
@@ -54,7 +57,7 @@ Fixed-width columns — header and rows share the same widths.
 
 | Column | Meaning |
 |---|---|
-| **ZFS STRUCTURE** | `ONLINE` / `AVAIL` / `UNUSED` (row); mirror headers (`mirror-0` …) on their own lines |
+| **ZFS STRUCTURE** | `ONLINE` / `AVAIL` / `UNUSED` (row); vdev headers (`mirror-0`, `raidz2-0`, …) on their own lines |
 | **DEVICE** | Kernel name `/dev/sdX` (can change after reboot — trust **SERIAL**) |
 | **SERIAL** | Stable identity |
 | **SIZE** | Capacity |
@@ -97,9 +100,9 @@ With enrichment enabled, diskinfo prefers **SMART+RISK from Diskrisk JSON**.
 Live `smartctl` is only a fallback (`--live-smart`). `?` = unknown
 (e.g. permission denied), not FAILED.
 
-## Mirror partners (the important part)
+## Same vdev (the important part)
 
-Read **under the mirror header**:
+Read **under the vdev header** — that is the failure domain:
 
 ```
 mirror-1
@@ -107,11 +110,15 @@ mirror-1
   ONLINE   /dev/sdt     Z1K0F5YV…                   1.8T       0    0    0 PASSED  GrownDefect=815↑
 ```
 
-Here `sdf` and `sdt` are **partners**. The pool survives if *one* dies.
-If **both** in the same `mirror-N` are yellow/red → prioritize replacement
-immediately.
+**Mirrors:** `sdf` and `sdt` are partners. The pool survives if *one* dies.
+If **both** in the same `mirror-N` are yellow/red → urgent.
 
-`special` = metadata SSD mirrors.  
+**raidz1 / raidz2 / raidz3 / draid:** every disk under `raidz2-0` (etc.) shares
+that vdev’s parity budget. Know which serial is in which `raidzN-M` before you
+pull a tray; multiple bad disks in the **same** raidz are much worse than the
+same count spread across vdevs.
+
+`special` = metadata (often mirrored SSDs).  
 `spares` = hot spares (`AVAIL`).  
 `UNUSED` = present in the chassis but not in the pool.
 

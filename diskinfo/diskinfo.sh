@@ -1,9 +1,9 @@
 #!/bin/bash
-# diskinfo — ZFS mirror tree (serial → bay); optional Diskrisk SMART/RISK columns
+# diskinfo — ZFS vdev tree (serial → bay); optional Diskrisk SMART/RISK columns
 # Manual: docs/diskinfo-manual.md
 set -euo pipefail
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 NO_SMART=0
 WANT_RISK=0          # 1 = force SMART/RISK columns
 LIVE_SMART=0         # 1 = fall back to smartctl when Diskrisk is down
@@ -23,6 +23,16 @@ W_SIZE=8
 W_IO=4
 W_SMART=7
 W_RISK=40
+
+# zpool status group names (not leaf devices): pool, mirror/raidz/draid-N, special/…
+is_vdev_header() {
+  local name="$1"
+  [[ "$name" == "$POOL" ]] && return 0
+  case "$name" in
+    special|spares|logs|cache|dedup) return 0 ;;
+  esac
+  [[ "$name" =~ ^(mirror|raidz[123]?|draid[123]?)-[0-9]+$ ]]
+}
 
 trim() {
   local s="$1"
@@ -71,9 +81,10 @@ POOL="$DEFAULT_POOL"
 
 usage() {
   cat <<EOF
-diskinfo v${VERSION} — ZFS mirror tree (serial → bay). Diskrisk enrichment optional.
+diskinfo v${VERSION} — ZFS vdev tree (serial → bay). Diskrisk enrichment optional.
 
 Works standalone: no Diskrisk/Beszel required for the core view.
+Shows mirror-N, raidz1/2/3-N, draid-N, special/spares/logs/cache.
 
 Usage:
   diskinfo [pool]              # ZFS tree; +RISK if SMART_RISK_URL is set
@@ -355,9 +366,12 @@ while IFS= read -r line; do
 
     print_row "$col" "$state" "/dev/$pk" "$serial" "$size" "$rd" "$wr" "$ck" "${_smart:-}" "${_risk:-}" "$uuid"
 
-  elif [[ "$line" =~ ^[[:space:]]*(mirror-[0-9]+|special|spares|logs|cache|${POOL}) ]]; then
+  else
+    # Structure line: pool root or vdev group (mirror / raidz / draid / …).
     clean=$(echo "$line" | awk '{print $1}')
-    printf "\033[1;32m%s\033[0m\n" "$clean"
+    if is_vdev_header "$clean"; then
+      printf "\033[1;32m%s\033[0m\n" "$clean"
+    fi
   fi
 done < <(zpool status -P "$POOL" 2>/dev/null)
 
