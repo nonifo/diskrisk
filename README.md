@@ -31,7 +31,7 @@ redundancy. Diskrisk + `diskinfo` close that gap:
 | Tool | Job | Needs Diskrisk? |
 |------|-----|-----------------|
 | **diskinfo** (CLI on the NAS) | Print the pool as a **vdev tree** (mirror / raidz / draid): device → **serial** | **No** — works alone |
-| **Diskrisk** (web / `/json`) | Rank disks by actionable SMART risk and **trend** | — |
+| **Diskrisk** (web / `/json`) | Rank disks by actionable SMART risk and **trend**; toggle **Disk list** ↔ **Topology** | — |
 | **diskinfo --risk** | Same tree **+** SMART/RISK columns from Diskrisk | Optional enrichment |
 
 Typical workflow: open Diskrisk (or `diskinfo --risk`), note the serial with
@@ -229,6 +229,7 @@ sudo rm -rf /opt/diskrisk
 | Path | What |
 |------|------|
 | `smart_risk.py` | Diskrisk HTTP service (HTML + `/json` + `/text`) |
+| `topology_collect.py` | Per-host ZFS / mergerfs topology → JSON for Diskrisk |
 | `diskinfo/` | CLI: ZFS vdev tree (mirror/raidz/draid) + SMART/RISK columns |
 | `branding/` | Optional UI assets |
 | `config.example.env` | Template only — real config lives in `/etc/diskrisk/` |
