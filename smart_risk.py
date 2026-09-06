@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-__version__ = "1.3.6"
+__version__ = "1.3.7"
 
 _REPO_ROOT = Path(__file__).resolve().parent
 
@@ -1013,6 +1013,30 @@ def _render_topology_disk_li(disk: Any, is_risk: bool) -> str:
     )
 
 
+def _vdev_box_class(vdev: str, kind: str = "") -> str:
+    """CSS modifier so mirror / raidz / mergerfs groups read as distinct boxes."""
+    v = (vdev or "").lower()
+    k = (kind or "").lower()
+    if "raidz" in v or v.startswith("raidz"):
+        return "vdev-raidz"
+    if "draid" in v:
+        return "vdev-draid"
+    if v.startswith("mirror") or "mirror" in v:
+        return "vdev-mirror"
+    if k == "mergerfs" or v in ("data", "parity", "hotspare", "members"):
+        if "parity" in v:
+            return "vdev-parity"
+        if "hotspare" in v or v == "spares" or "spare" in v:
+            return "vdev-spare"
+        if k == "mergerfs":
+            return "vdev-mergerfs"
+    if k == "mdadm" or v.startswith("raid"):
+        return "vdev-mdadm"
+    if v == "spares" or "spare" in v:
+        return "vdev-spare"
+    return "vdev-generic"
+
+
 def _render_topology_view(report: dict[str, Any]) -> str:
     """Group disks by host → pool → vdev for the Topology view."""
     tree, unmapped = _build_topology_tree(report)
@@ -1047,11 +1071,17 @@ def _render_topology_view(report: dict[str, Any]) -> str:
             )
             for vdev in sorted(tree[host][pool].keys()):
                 members = tree[host][pool][vdev]
+                vcls = _vdev_box_class(vdev, kind)
+                label = "vdev"
+                if kind == "mergerfs":
+                    label = "role"
+                elif kind == "mdadm":
+                    label = "array"
                 blocks.append(
-                    f'<div class="topo-vdev">'
-                    f'<div class="topo-vdev-h"><span class="topo-level">vdev</span> '
-                    f"{html.escape(vdev)}"
-                    f' <span class="topo-count">{len(members)}</span></div>'
+                    f'<div class="topo-vdev {vcls}">'
+                    f'<div class="topo-vdev-h"><span class="topo-level">{label}</span> '
+                    f"<strong>{html.escape(vdev)}</strong>"
+                    f' <span class="topo-count">{len(members)} disks</span></div>'
                     f'<ul class="topo-disks">'
                 )
                 for disk, is_risk in sorted(members, key=_disk_sort_key):
@@ -1570,26 +1600,58 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
 .topo-pool-h {{ margin-bottom: .55rem; display: flex; flex-wrap: wrap; align-items: center; gap: .25rem; }}
 .topo-pool-name {{ font-size: 1rem; }}
 .topo-pool-body {{
-  margin: 0 0 0 .35rem; padding-left: .9rem;
-  border-left: 2px dashed rgba(0,125,138,.28);
+  margin: .15rem 0 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .55rem;
 }}
 .topo-vdev {{
-  margin: .55rem 0 .4rem; padding: .15rem 0 .15rem .85rem;
-  border-left: 3px solid rgba(0,125,138,.42);
+  margin: 0;
+  padding: 0;
+  border: 2px solid rgba(0,125,138,.38);
+  border-radius: 10px;
+  background: rgba(255,252,246,.92);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(18,23,24,.04);
 }}
 .topo-vdev-h {{
-  font-size: .78rem; font-weight: 700; color: var(--muted);
-  letter-spacing: .03em; margin-bottom: .3rem;
+  margin: 0;
+  padding: .45rem .75rem;
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #005f69;
+  background: rgba(0,125,138,.12);
+  border-bottom: 1px solid rgba(0,125,138,.22);
 }}
-.topo-disks {{ list-style: none; margin: 0; padding: 0; }}
+.topo-vdev-h .topo-level {{ color: inherit; opacity: .75; }}
+.topo-vdev.vdev-mirror {{ border-color: rgba(0,125,138,.55); }}
+.topo-vdev.vdev-mirror .topo-vdev-h {{ background: rgba(0,125,138,.16); }}
+.topo-vdev.vdev-raidz {{ border-color: rgba(47,122,85,.55); }}
+.topo-vdev.vdev-raidz .topo-vdev-h {{ background: rgba(47,122,85,.14); color: #2f7a55; }}
+.topo-vdev.vdev-draid {{ border-color: rgba(47,122,85,.45); }}
+.topo-vdev.vdev-draid .topo-vdev-h {{ background: rgba(47,122,85,.12); color: #2f7a55; }}
+.topo-vdev.vdev-mdadm {{ border-color: rgba(176,122,0,.5); }}
+.topo-vdev.vdev-mdadm .topo-vdev-h {{ background: rgba(176,122,0,.14); color: #8a5f00; }}
+.topo-vdev.vdev-mergerfs {{ border-color: rgba(0,95,105,.4); }}
+.topo-vdev.vdev-mergerfs .topo-vdev-h {{ background: rgba(0,95,105,.1); }}
+.topo-vdev.vdev-parity {{ border-color: rgba(194,59,46,.35); }}
+.topo-vdev.vdev-parity .topo-vdev-h {{ background: rgba(194,59,46,.1); color: #8a3222; }}
+.topo-vdev.vdev-spare {{ border-color: rgba(83,98,100,.4); border-style: dashed; }}
+.topo-vdev.vdev-spare .topo-vdev-h {{ background: rgba(83,98,100,.1); color: var(--muted); }}
+.topo-disks {{ list-style: none; margin: 0; padding: .35rem .55rem .5rem; }}
 .topo-disk {{
-  padding: .4rem .5rem .4rem .55rem; margin: .2rem 0;
-  border-radius: 8px; border: 1px solid transparent;
-  border-bottom-color: rgba(18,23,24,.06);
+  padding: .45rem .55rem;
+  margin: .25rem 0;
+  border-radius: 8px;
+  border: 1px solid rgba(18,23,24,.08);
+  background: var(--card);
 }}
-.topo-disk:last-child {{ border-bottom-color: transparent; }}
-.topo-disk.risk {{ background: rgba(176,122,0,.06); border-color: rgba(176,122,0,.18); }}
-.topo-disk.growing {{ background: rgba(194,59,46,.07); border-color: rgba(194,59,46,.22); }}
+.topo-disk:last-child {{ margin-bottom: 0; }}
+.topo-disk.risk {{ background: rgba(176,122,0,.07); border-color: rgba(176,122,0,.28); }}
+.topo-disk.growing {{ background: rgba(194,59,46,.08); border-color: rgba(194,59,46,.32); }}
 .topo-disk-main {{ display: flex; flex-wrap: wrap; align-items: baseline; gap: .35rem; }}
 .topo-serial {{ font-size: .9rem; font-weight: 600; }}
 .topo-disk-meta {{ margin-top: .1rem; }}

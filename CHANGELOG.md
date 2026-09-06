@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.3.7] — 2026-09-06
+
+### Diskrisk
+- Topology: **box each vdev / role** (mirror, raidz, mergerfs, mdadm, spare) with a clear header — easier to see which disks share a failure domain
+
 ## [1.3.6] — 2026-09-06
 
 ### Diskrisk
@@ -80,6 +85,7 @@ LLM assistants — see [AI.md](AI.md).
 - Trend history (baseline / Now / GROWING)
 - Git-based install (`install.sh` / `update.sh`) with config under `/etc/diskrisk/`
 
+[1.3.7]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.7
 [1.3.6]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.6
 [1.3.5]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.5
 [1.3.4]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.4
