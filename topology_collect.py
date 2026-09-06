@@ -3,6 +3,7 @@
 
 Supports:
   - ZFS pools (mirror / raidz / draid / …)
+  - Linux mdadm RAID (raid0/1/5/6/10/…)
   - mergerfs pools over per-disk btrfs (or other) branches
   - snapraid parity / hotspare roles (path heuristics)
 
@@ -305,6 +306,136 @@ def collect_mergerfs(rows: dict[str, dict[str, str]], disks: dict[str, dict[str,
             }
 
 
+def _md_array_devices() -> list[str]:
+    """Return /dev/md* paths that look like assembled arrays."""
+    found: list[str] = []
+    # Prefer /proc/mdstat names (md0, md127, …)
+    mdstat = Path("/proc/mdstat")
+    if mdstat.is_file():
+        try:
+            text = mdstat.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            m = re.match(r"^(md\S+)\s*:", line)
+            if m:
+                found.append(f"/dev/{m.group(1)}")
+    # Also pick up named arrays under /dev/md/
+    md_dir = Path("/dev/md")
+    if md_dir.is_dir():
+        for p in sorted(md_dir.iterdir()):
+            if p.is_block_device() or p.exists():
+                path = str(p)
+                if path not in found:
+                    found.append(path)
+    # Deduplicate by resolving same minor if possible
+    return found
+
+
+def _parse_mdadm_detail(text: str) -> dict[str, Any]:
+    """Parse `mdadm --detail` into level, name/uuid, and member devices."""
+    level = ""
+    name = ""
+    uuid = ""
+    members: list[tuple[str, str]] = []  # (path, role)
+    for line in text.splitlines():
+        if ":" in line and not line.strip().startswith("/dev/"):
+            key, _, val = line.partition(":")
+            key = key.strip().lower()
+            val = val.strip()
+            if key == "raid level":
+                level = val.lower().replace(" ", "")
+            elif key == "name":
+                # host:arrayname or just name
+                name = val.split(":")[-1].strip() if val else ""
+            elif key == "uuid":
+                uuid = val
+        # Member rows: "       0       8        1        0      active sync   /dev/sda1"
+        m = re.search(
+            r"\b(active\s+sync|active\s+spare|spare|faulty|removed|journal|writemostly)\b"
+            r".*(/dev/\S+)",
+            line,
+            re.IGNORECASE,
+        )
+        if m:
+            state = re.sub(r"\s+", " ", m.group(1).strip().lower())
+            path = m.group(2)
+            if "spare" in state:
+                role = "spare"
+            elif "faulty" in state or "removed" in state:
+                role = "faulty"
+            elif "journal" in state:
+                role = "journal"
+            else:
+                role = "member"
+            members.append((path, role))
+            continue
+        # Fallback: any trailing /dev/ on numbered state lines
+        m2 = re.search(r"(/dev/[^\s]+)\s*$", line)
+        if m2 and re.search(r"\b(active|spare|faulty|journal)\b", line, re.I):
+            path = m2.group(1)
+            role = "spare" if re.search(r"\bspare\b", line, re.I) else "member"
+            if re.search(r"\bfaulty\b", line, re.I):
+                role = "faulty"
+            if not any(p == path for p, _ in members):
+                members.append((path, role))
+    return {"level": level, "name": name, "uuid": uuid, "members": members}
+
+
+def collect_mdadm(rows: dict[str, dict[str, str]], disks: dict[str, dict[str, Any]]) -> None:
+    """Linux mdadm software RAID arrays."""
+    for md in _md_array_devices():
+        detail = _run(["mdadm", "--detail", md])
+        if not detail:
+            # try without privileges may fail; still attempt lsblk children
+            continue
+        parsed = _parse_mdadm_detail(detail)
+        level = parsed["level"] or "mdadm"
+        pool = parsed["name"] or Path(md).name
+        if not pool:
+            pool = (parsed["uuid"] or "md")[:8]
+        vdev = level  # raid1 / raid5 / raid10 …
+        members = parsed["members"]
+        if not members:
+            continue
+
+        # Resolve serials
+        resolved: list[tuple[str, str, str]] = []  # ser, role, device
+        for path, role in members:
+            base = Path(path).name
+            disk_name = _part_to_disk(rows, base)
+            ser = _disk_serial(rows, disk_name) or _norm_serial(
+                _run(["lsblk", "-dno", "SERIAL", path]).strip()
+            )
+            if not ser:
+                # whole-disk serial via parent
+                ser = _norm_serial(_run(["lsblk", "-dno", "SERIAL", f"/dev/{disk_name}"]).strip())
+            if not ser:
+                continue
+            resolved.append((ser, role, f"/dev/{disk_name}" if disk_name else path))
+
+        active = [s for s, r, _ in resolved if r == "member"]
+        for ser, role, dev in resolved:
+            existing = disks.get(ser)
+            if existing and existing.get("kind") == "zfs":
+                continue
+            peers = (
+                [p for p in active if p != ser]
+                if role == "member"
+                else [p for p, r, _ in resolved if p != ser and r == role]
+            )
+            disks[ser] = {
+                "kind": "mdadm",
+                "pool": pool,
+                "vdev": vdev,
+                "role": role,
+                "peers": peers,
+                "device": dev,
+                "label": f"{pool} ({vdev})" if vdev else pool,
+                "md": md,
+            }
+
+
 def collect_loose_btrfs(rows: dict[str, dict[str, str]], disks: dict[str, dict[str, Any]]) -> None:
     """Single-disk btrfs mounts not already claimed."""
     for name, f in rows.items():
@@ -334,6 +465,7 @@ def collect(host: str) -> dict[str, Any]:
     rows = _lsblk_disks()
     disks: dict[str, dict[str, Any]] = {}
     collect_zfs(rows, disks)
+    collect_mdadm(rows, disks)
     collect_mergerfs(rows, disks)
     collect_loose_btrfs(rows, disks)
     return {

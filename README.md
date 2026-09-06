@@ -229,7 +229,7 @@ sudo rm -rf /opt/diskrisk
 | Path | What |
 |------|------|
 | `smart_risk.py` | Diskrisk HTTP service (HTML + `/json` + `/text`) |
-| `topology_collect.py` | Per-host ZFS / mergerfs topology → JSON for Diskrisk |
+| `topology_collect.py` | Per-host ZFS / mdadm / mergerfs topology → JSON for Diskrisk |
 | `diskinfo/` | CLI: ZFS vdev tree (mirror/raidz/draid) + SMART/RISK columns |
 | `branding/` | Optional UI assets |
 | `config.example.env` | Template only — real config lives in `/etc/diskrisk/` |
