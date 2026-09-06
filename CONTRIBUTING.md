@@ -2,6 +2,9 @@
 
 Thanks for looking at Diskrisk. Issues and pull requests are welcome.
 
+This repository is **AI-assisted** (Cursor, Codex, Claude, and other tools).
+See [AI.md](AI.md) for how that was used and what we still expect from humans.
+
 ## Ways to help
 
 - **Bug reports** — what you ran, host OS / ZFS version, and anonymized output
@@ -30,3 +33,4 @@ bash -n diskinfo/diskinfo.sh install.sh update.sh
 2. Keep diffs focused.
 3. Update `docs/` and `CHANGELOG.md` when behaviour changes.
 4. Bump `VERSION` / `__version__` / `diskinfo` `VERSION=` together when releasing.
+5. If an LLM wrote large parts of the change, say so in the PR (one line is enough).

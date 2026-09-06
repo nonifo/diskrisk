@@ -8,6 +8,10 @@ boxes, and mixed pools where `/dev/sdX` names reshuffle after every reboot.
 
 Issues and PRs welcome — see [CONTRIBUTING.md](CONTRIBUTING.md).
 
+**AI-assisted project.** Substantial parts of the code and docs were written
+with [Cursor](https://cursor.com/), **OpenAI Codex**, **Anthropic Claude**, and
+other LLM tools under human direction. Details: [AI.md](AI.md).
+
 ## Why this exists
 
 When a disk starts to fail you usually need three answers at once:
@@ -232,6 +236,7 @@ sudo rm -rf /opt/diskrisk
 
 ## Docs
 
+- [AI.md](AI.md) — Cursor / Codex / Claude and other assistant tooling  
 - [CHANGELOG.md](CHANGELOG.md) — release notes  
 - [CONTRIBUTING.md](CONTRIBUTING.md) — how to suggest changes  
 - [docs/SMART-risk-manual.md](docs/SMART-risk-manual.md) — architecture & attributes  

@@ -4,6 +4,9 @@
 
 First public release.
 
+**Note:** development used Cursor, OpenAI Codex, Anthropic Claude, and other
+LLM assistants — see [AI.md](AI.md).
+
 ### diskinfo
 - Standalone ZFS mirror CLI by default (no Diskrisk required)
 - Optional SMART/RISK enrichment via `SMART_RISK_URL` or `--risk`
