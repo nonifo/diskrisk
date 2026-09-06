@@ -1,0 +1,19 @@
+[Unit]
+Description=Diskrisk — actionable SMART risk report
+After=network-online.target
+Wants=network-online.target
+# Optional: After=beszel-hub.service
+
+[Service]
+Type=simple
+# Prefer a dedicated config path in production:
+Environment=DISKRISK_CONFIG=/etc/diskrisk/config.env
+# WorkingDirectory should contain smart_risk.py (or set absolute ExecStart)
+WorkingDirectory=/opt/diskrisk
+ExecStart=/usr/bin/python3 /opt/diskrisk/smart_risk.py
+Restart=always
+RestartSec=5
+# User=diskrisk
+
+[Install]
+WantedBy=multi-user.target

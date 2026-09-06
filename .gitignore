@@ -1,0 +1,13 @@
+# Local secrets / runtime config (never commit)
+config.env
+.env
+*.local.env
+
+# Runtime / editor
+__pycache__/
+*.pyc
+.history/
+.DS_Store
+*.swp
+/var/
+history.json
