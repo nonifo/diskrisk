@@ -136,6 +136,21 @@ TOPOLOGY_DIR = Path(
         str(Path(os.environ.get("SMART_RISK_HISTORY", "/var/lib/diskrisk/history.json")).parent / "topology"),
     )
 )
+INVENTORY_DIR = Path(
+    os.environ.get(
+        "DISKRISK_INVENTORY_DIR",
+        str(Path(os.environ.get("SMART_RISK_HISTORY", "/var/lib/diskrisk/history.json")).parent / "inventory"),
+    )
+)
+try:
+    INVENTORY_MAX_AGE_SECONDS = max(60, int(os.environ.get("DISKRISK_INVENTORY_MAX_AGE_SECONDS", "900")))
+except ValueError:
+    INVENTORY_MAX_AGE_SECONDS = 900
+REQUIRED_INVENTORY_SYSTEMS = {
+    item.strip().casefold()
+    for item in os.environ.get("DISKRISK_INVENTORY_REQUIRED_SYSTEMS", "").split(",")
+    if item.strip()
+}
 SMART_DIR = Path(
     os.environ.get(
         "DISKRISK_SMART_DIR",
@@ -517,6 +532,59 @@ def load_topology() -> dict[str, TopologyInfo]:
     return out
 
 
+def load_physical_inventories(
+    systems: dict[str, str], now: datetime | None = None
+) -> tuple[dict[str, set[str]], dict[str, dict[str, Any]]]:
+    """Load fresh, host-scoped physical serial allowlists.
+
+    Inventory files are generated from live lsblk output by the storage host.
+    A required host with missing/stale inventory is deliberately mapped to an
+    empty set so stale Beszel observations fail closed instead of looking like
+    currently installed disks.
+    """
+    now = now or datetime.now(timezone.utc)
+    allow: dict[str, set[str]] = {}
+    status: dict[str, dict[str, Any]] = {}
+    known = {name.casefold(): sid for sid, name in systems.items() if name}
+
+    for path in sorted(INVENTORY_DIR.glob("*.json")) if INVENTORY_DIR.is_dir() else []:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            host = str(payload.get("host") or path.stem).strip().casefold()
+            updated_text = str(payload.get("updated") or "")
+            updated = datetime.fromisoformat(updated_text.replace("Z", "+00:00"))
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            age = int((now - updated.astimezone(timezone.utc)).total_seconds())
+            raw = payload.get("disks") or {}
+            serials = {
+                _norm_serial(str(serial))
+                for serial in raw
+                if _norm_serial(str(serial))
+            } if isinstance(raw, dict) else set()
+            sid = known.get(host)
+            if not sid:
+                continue
+            is_fresh = 0 <= age <= INVENTORY_MAX_AGE_SECONDS and bool(serials)
+            allow[sid] = serials if is_fresh else set()
+            status[host] = {
+                "state": "fresh" if is_fresh else "stale",
+                "updated": updated.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "age_seconds": age,
+                "serial_count": len(serials),
+                "included_count": len(serials) if is_fresh else 0,
+            }
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+
+    for required in REQUIRED_INVENTORY_SYSTEMS:
+        sid = known.get(required)
+        if sid and sid not in allow:
+            allow[sid] = set()
+            status[required] = {"state": "missing", "serial_count": 0, "included_count": 0}
+    return allow, status
+
+
 def _lookup_topology(topo: dict[str, TopologyInfo], serial: str) -> TopologyInfo | None:
     key = _norm_serial(serial)
     if not key:
@@ -750,13 +818,27 @@ def build_report() -> dict[str, Any]:
     token = beszel_token()
     systems = {s["id"]: s.get("name") or s["id"] for s in beszel_records(token, "systems")}
     devices = beszel_records(token, "smart_devices")
+    inventory_allow, inventory_status = load_physical_inventories(systems)
     scr = scrutiny_status_by_serial()
     topo = load_topology()
     smart_idx = load_smart_index(SMART_DIR) if RISK_ENGINE in ("hybrid", "stats") else {}
 
     staged: list[DiskRisk] = []
+    inventory_excluded = 0
+    nonphysical_excluded = 0
+    inventory_seen: dict[str, set[str]] = {sid: set() for sid in inventory_allow}
     for d in devices:
         serial = (d.get("serial") or "").strip()
+        model = (d.get("model") or "").strip()
+        if model.casefold() == "qemu harddisk" or "iscsi" in model.casefold():
+            nonphysical_excluded += 1
+            continue
+        system_id = str(d.get("system") or "")
+        if system_id in inventory_allow:
+            if not serial or _norm_serial(serial) not in inventory_allow[system_id]:
+                inventory_excluded += 1
+                continue
+            inventory_seen.setdefault(system_id, set()).add(_norm_serial(serial))
         ns = _norm_serial(serial)
         extra = None
         if smart_idx:
@@ -786,6 +868,18 @@ def build_report() -> dict[str, Any]:
         if risk.scrutiny_status is None and serial:
             risk.scrutiny_status = scr.get(_norm_serial(serial))
         staged.append(risk)
+
+    for host, info in inventory_status.items():
+        sid = next(
+            (key for key, display in systems.items() if display.casefold() == host.casefold()),
+            None,
+        )
+        if sid:
+            seen = inventory_seen.get(sid, set())
+            info["beszel_serial_count"] = len(seen)
+            info["unmonitored_count"] = max(
+                0, len(inventory_allow.get(sid, set())) - len(seen)
+            )
 
     # History for every disk that has signals (incl. advisory info) so MultiZone can trend.
     hist_targets = [r for r in staged if r.findings]
@@ -832,7 +926,8 @@ def build_report() -> dict[str, Any]:
     policy["history_max_samples"] = HISTORY_MAX_SAMPLES
     return {
         "generated": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%SZ"),
-        "total_devices": len(devices),
+        "total_devices": len(staged),
+        "beszel_device_records": len(devices),
         "clean": len(clean),
         "clean_disks": clean,
         "risks": risks,
@@ -845,6 +940,9 @@ def build_report() -> dict[str, Any]:
         "engine": RISK_ENGINE,
         "policy": policy,
         "topology_mapped": sum(1 for r in risks if r.topology) + sum(1 for c in clean if c.topology),
+        "physical_inventory": inventory_status,
+        "inventory_excluded": inventory_excluded,
+        "nonphysical_excluded": nonphysical_excluded,
     }
 
 
@@ -1117,6 +1215,7 @@ def serialize_report(report: dict[str, Any]) -> dict[str, Any]:
     return {
         "generated": report["generated"],
         "total_devices": report["total_devices"],
+        "beszel_device_records": report.get("beszel_device_records", report["total_devices"]),
         "clean": report["clean"],
         "growing_count": report.get("growing_count", 0),
         "scrutiny_flagged": report["scrutiny_flagged"],
@@ -1125,6 +1224,9 @@ def serialize_report(report: dict[str, Any]) -> dict[str, Any]:
         "smart_path": report.get("smart_path"),
         "smart_overlays": report.get("smart_overlays", 0),
         "topology_mapped": report.get("topology_mapped", 0),
+        "physical_inventory": report.get("physical_inventory", {}),
+        "inventory_excluded": report.get("inventory_excluded", 0),
+        "nonphysical_excluded": report.get("nonphysical_excluded", 0),
         "engine": policy.get("engine", RISK_ENGINE),
         "policy": policy,
         "risks": [_serialize_risk(r) for r in report["risks"]],
@@ -1637,6 +1739,24 @@ def render_html(report: dict[str, Any]) -> str:
     hist_d = int(policy.get("history_days") or HISTORY_DAYS)
     hist_pd = int(policy.get("history_per_day") or HISTORY_PER_DAY)
     eng = html.escape(str(policy.get("engine") or RISK_ENGINE))
+    inv = report.get("physical_inventory") or {}
+    inv_warnings = [
+        f"{html.escape(host)}: {html.escape(str(info.get('state') or 'unknown'))}"
+        for host, info in sorted(inv.items())
+        if info.get("state") != "fresh"
+    ]
+    inv_excluded = int(report.get("inventory_excluded") or 0)
+    virtual_excluded = int(report.get("nonphysical_excluded") or 0)
+    unmonitored = sum(int(info.get("unmonitored_count") or 0) for info in inv.values())
+    inv_notice = (
+        "<p class='meta' role='status'><strong>Physical inventory:</strong> "
+        + ("; ".join(inv_warnings) + ". Stale/missing hosts are hidden until refreshed." if inv_warnings else "all configured storage inventories are fresh.")
+        + (f" {inv_excluded} stale Beszel record(s) excluded." if inv_excluded else "")
+        + (f" {virtual_excluded} virtual/network block record(s) excluded." if virtual_excluded else "")
+        + (f" {unmonitored} physically present disk(s) have no Beszel SMART record." if unmonitored else "")
+        + "</p>"
+        if inv else "<p class='meta' role='status'><strong>Physical inventory filtering is not configured.</strong> Disk list may include stale monitoring records.</p>"
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>
@@ -1982,6 +2102,7 @@ table.attrs th.attr-name, table.attrs td.attr-name {{
     {brand_link}
     <p class="product">{product}</p>
   </header>
+  {inv_notice}
   <p class="meta">
     {html.escape(report['generated'])} ·
     engine=<strong>{eng}</strong> ·

@@ -1,0 +1,9 @@
+[Unit]
+Description=Refresh SmartRisk physical disk inventory
+After=network-online.target pve-cluster.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/sbin/diskrisk-sync-inventory
+TimeoutStartSec=90

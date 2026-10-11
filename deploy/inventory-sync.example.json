@@ -1,0 +1,18 @@
+{
+  "hosts": [
+    {
+      "host": "example-storage-a",
+      "command": ["ssh", "collector@example-storage-a", "lsblk", "-dn", "-P", "-o", "NAME,SERIAL,MODEL,TYPE"]
+    },
+    {
+      "host": "example-storage-b",
+      "command": ["ssh", "collector@example-storage-b", "lsblk", "-dn", "-P", "-o", "NAME,SERIAL,MODEL,TYPE"],
+      "json_guest_agent": false
+    }
+  ],
+  "store_command": [
+    "sh",
+    "-c",
+    "mkdir -p /var/lib/diskrisk/inventory && umask 077; cat > /var/lib/diskrisk/inventory/.{host}.json.tmp && mv /var/lib/diskrisk/inventory/.{host}.json.tmp /var/lib/diskrisk/inventory/{host}.json"
+  ]
+}

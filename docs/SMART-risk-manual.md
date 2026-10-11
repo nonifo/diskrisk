@@ -370,3 +370,37 @@ Until that changes upstream (or Diskrisk grows a richer Beszel client):
 | No trend (always baseline) | Is `history.json` writable? |
 | `diskinfo` without ↑ | Is Diskrisk `/json` reachable? `SMART_RISK_URL` |
 | PASSED but highlighted in Diskrisk | Expected — health bit ≠ risk attributes |
+
+## 11. Physical inventory filtering
+
+Beszel can retain a SMART record after a disk has been removed. Diskrisk must
+not treat those records as installed hardware. The monitoring service reads
+fresh per-host allowlists from `DISKRISK_INVENTORY_DIR` (default:
+`/var/lib/diskrisk/inventory`). Each JSON file is keyed by host name and disk
+serial and is generated from the storage guest's live `lsblk` output. Serial
+matching is exact after whitespace/case normalization.
+QEMU virtual disks and iSCSI logical volumes are excluded from the physical
+drive list (including remotely presented TrueNAS iSCSI volumes).
+
+Set `DISKRISK_INVENTORY_REQUIRED_SYSTEMS` to the names used by Beszel and
+`DISKRISK_INVENTORY_MAX_AGE_SECONDS` to the acceptable age. A missing, empty,
+or stale inventory for a required host fails closed: its Beszel records are
+hidden until the next successful inventory update. The page and `/json` expose
+inventory freshness and the number of stale Beszel records excluded.
+
+An administrator-managed systemd timer can refresh each monitored host using
+its existing trusted collection path. Keep connection details, hostnames and
+destination commands in `/etc/diskrisk/inventory-sync.json`; start from
+`deploy/inventory-sync.example.json` and replace its example values locally.
+Do not commit infrastructure-specific values to the public repository. Check
+the sync with:
+
+```sh
+systemctl status diskrisk-inventory-sync.timer
+systemctl start diskrisk-inventory-sync.service
+journalctl -u diskrisk-inventory-sync.service -n 30 --no-pager
+```
+
+No pool topology, SMART attributes, or storage data is modified by this
+collector. Physical presence is separate from pool membership: an installed
+disk can still be an available spare or an unused disk.

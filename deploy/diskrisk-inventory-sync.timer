@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh SmartRisk physical disk inventory every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=diskrisk-inventory-sync.service
+
+[Install]
+WantedBy=timers.target
