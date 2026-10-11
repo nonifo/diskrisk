@@ -6,10 +6,24 @@ from pathlib import Path
 from unittest.mock import patch
 
 import smart_risk
-from deploy.sync_physical_inventory import parse_lsblk
+from deploy.sync_physical_inventory import parse_lsblk, validate_topology
 
 
 class PhysicalInventoryTests(unittest.TestCase):
+    def test_topology_snapshot_requires_matching_host_and_nonempty_mapping(self):
+        payload = {
+            "host": "example-storage-a",
+            "updated": "2026-10-11T18:00:00Z",
+            "disks": {"TEST-DISK-001": {"pool": "iron", "vdev": "mirror-1"}},
+        }
+        encoded = json.dumps(payload)
+        self.assertEqual(json.loads(validate_topology("example-storage-a", encoded)), payload)
+        with self.assertRaisesRegex(RuntimeError, "host does not match"):
+            validate_topology("example-storage-b", encoded)
+        payload["disks"] = {}
+        with self.assertRaisesRegex(RuntimeError, "no disk mappings"):
+            validate_topology("example-storage-a", json.dumps(payload))
+
     def test_inventory_collector_excludes_virtual_and_network_disks(self):
         rows = '\n'.join([
             'NAME="sda" SERIAL="drive-scsi0" MODEL="QEMU HARDDISK" TYPE="disk"',

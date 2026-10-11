@@ -53,6 +53,24 @@ def snapshot(host: str, stdout: str) -> bytes:
     return (json.dumps(payload, indent=2) + "\n").encode()
 
 
+def unwrap_guest_agent(stdout: str, label: str) -> str:
+    response = json.loads(stdout)
+    if int(response.get("exitcode", 1)) != 0 or response.get("exited", 1) != 1:
+        raise RuntimeError(f"guest agent did not complete {label} successfully")
+    return str(response.get("out-data") or "")
+
+
+def validate_topology(host: str, stdout: str) -> bytes:
+    payload = json.loads(stdout)
+    if payload.get("host", "").strip().casefold() != host.casefold():
+        raise RuntimeError("topology host does not match configured host")
+    if not isinstance(payload.get("disks"), dict) or not payload["disks"]:
+        raise RuntimeError("topology has no disk mappings; refusing to replace current snapshot")
+    if not payload.get("updated"):
+        raise RuntimeError("topology timestamp is missing")
+    return (json.dumps(payload, indent=2) + "\n").encode()
+
+
 def main() -> int:
     config_path = os.environ.get("DISKRISK_INVENTORY_SYNC_CONFIG", DEFAULT_CONFIG)
     with open(config_path, encoding="utf-8") as source:
@@ -72,16 +90,28 @@ def main() -> int:
                 raise RuntimeError("host command is missing")
             stdout = run([str(part) for part in command])
             if entry.get("json_guest_agent"):
-                response = json.loads(stdout)
-                if int(response.get("exitcode", 1)) != 0 or response.get("exited", 1) != 1:
-                    raise RuntimeError("guest agent did not complete lsblk successfully")
-                stdout = str(response.get("out-data") or "")
+                stdout = unwrap_guest_agent(stdout, "lsblk")
             data = snapshot(host, stdout)
             command = [str(part).replace("{host}", host) for part in store_command]
             proc = subprocess.run(command, input=data, capture_output=True)
             if proc.returncode:
                 raise RuntimeError(f"failed storing snapshot: {proc.stderr.decode(errors='replace')[:200]}")
             print(f"{host}: refreshed {len(json.loads(data)['disks'])} disk serials")
+
+            topology_command = entry.get("topology_command")
+            if topology_command:
+                topology_stdout = run([str(part) for part in topology_command], timeout=60)
+                if entry.get("topology_json_guest_agent"):
+                    topology_stdout = unwrap_guest_agent(topology_stdout, "topology collection")
+                topology = validate_topology(host, topology_stdout)
+                topology_store_command = config.get("topology_store_command")
+                if not isinstance(topology_store_command, list) or not topology_store_command:
+                    raise RuntimeError("topology_store_command is required when topology collection is enabled")
+                target = [str(part).replace("{host}", host) for part in topology_store_command]
+                proc = subprocess.run(target, input=topology, capture_output=True)
+                if proc.returncode:
+                    raise RuntimeError(f"failed storing topology: {proc.stderr.decode(errors='replace')[:200]}")
+                print(f"{host}: refreshed topology for {len(json.loads(topology)['disks'])} disk mappings")
         except Exception as exc:
             errors += 1
             print(f"{host}: refresh failed: {exc}", file=sys.stderr)

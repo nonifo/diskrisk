@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.4.2] — 2026-10-11
+
+### Diskrisk
+- Refresh pool/vdev topology alongside physical disk inventory on the existing periodic sync.
+- Validate host identity and non-empty topology mappings before replacing the last good snapshot.
+- Refresh topology through both SSH and guest-agent collection paths; add regression coverage.
+
 ## [1.4.1] — 2026-10-11
 
 ### Diskrisk

@@ -2,17 +2,25 @@
   "hosts": [
     {
       "host": "example-storage-a",
-      "command": ["ssh", "collector@example-storage-a", "lsblk", "-dn", "-P", "-o", "NAME,SERIAL,MODEL,TYPE"]
+      "command": ["ssh", "collector@example-storage-a", "lsblk", "-dn", "-P", "-o", "NAME,SERIAL,MODEL,TYPE"],
+      "topology_command": ["ssh", "collector@example-storage-a", "python3", "/usr/local/lib/diskrisk/topology_collect.py", "--host", "example-storage-a"]
     },
     {
       "host": "example-storage-b",
       "command": ["ssh", "collector@example-storage-b", "lsblk", "-dn", "-P", "-o", "NAME,SERIAL,MODEL,TYPE"],
-      "json_guest_agent": false
+      "json_guest_agent": false,
+      "topology_command": ["guestctl", "exec", "example-guest-id", "--", "python3", "/usr/local/lib/diskrisk/topology_collect.py", "--host", "example-storage-b"],
+      "topology_json_guest_agent": true
     }
   ],
   "store_command": [
     "sh",
     "-c",
     "mkdir -p /var/lib/diskrisk/inventory && umask 077; cat > /var/lib/diskrisk/inventory/.{host}.json.tmp && mv /var/lib/diskrisk/inventory/.{host}.json.tmp /var/lib/diskrisk/inventory/{host}.json"
+  ],
+  "topology_store_command": [
+    "sh",
+    "-c",
+    "mkdir -p /var/lib/diskrisk/topology && umask 077; cat > /var/lib/diskrisk/topology/.{host}.json.tmp && mv /var/lib/diskrisk/topology/.{host}.json.tmp /var/lib/diskrisk/topology/{host}.json"
   ]
 }

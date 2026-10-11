@@ -392,6 +392,9 @@ An administrator-managed systemd timer can refresh each monitored host using
 its existing trusted collection path. Keep connection details, hostnames and
 destination commands in `/etc/diskrisk/inventory-sync.json`; start from
 `deploy/inventory-sync.example.json` and replace its example values locally.
+Add `topology_command` for each host and `topology_store_command` to have the
+same timer refresh pool/vdev mappings as well. The sync rejects an empty,
+invalid, or host-mismatched topology response and keeps the last good snapshot.
 Do not commit infrastructure-specific values to the public repository. Check
 the sync with:
 
