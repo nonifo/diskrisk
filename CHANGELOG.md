@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1] — 2026-10-11
+
+### Diskrisk
+- Fix stale Beszel SMART records appearing as installed disks: filter storage hosts against fresh serial-numbered physical inventories.
+- Fail closed when a required inventory is missing or stale, and show inventory freshness/excluded records in the UI and `/json`.
+- Exclude virtual QEMU disks and iSCSI logical volumes from the physical disk list.
+- Add a five-minute inventory sync service for the Bagoly storage guests and regression tests.
+
 ## [1.4.0] — 2026-09-06
 
 ### Diskrisk — risk engine
@@ -108,6 +116,7 @@ LLM assistants — see [AI.md](AI.md).
 - Git-based install (`install.sh` / `update.sh`) with config under `/etc/diskrisk/`
 
 [1.3.7]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.7
+[1.4.1]: https://github.com/nonifo/diskrisk/releases/tag/v1.4.1
 [1.3.6]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.6
 [1.3.5]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.5
 [1.3.4]: https://github.com/nonifo/diskrisk/releases/tag/v1.3.4
