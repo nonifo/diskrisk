@@ -1,6 +1,6 @@
 # Diskrisk
 
-**v1.4.0** — find the **right physical disk** when something is dying, and see
+Find the **right physical disk** when something is dying, and see
 **whether the problem is getting worse**, without chassis LEDs or vendor GUIs.
 Optional hybrid risk engine (`DISKRISK_RISK_ENGINE`) treats MultiZone as advisory
 and UDMA_CRC as interface noise (default remains classic).
