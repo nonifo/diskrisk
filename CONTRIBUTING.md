@@ -37,6 +37,10 @@ bash -n diskinfo/diskinfo.sh install.sh update.sh
 
 ## Release assets (optional checksums)
 
+Official GitHub tags and releases are published by the project owner account
+`@nonifo`. Set the Git tagger and release author to `nonifo`; automation and
+AI coding tools must not publish releases under their own identities.
+
 Install is normally via `git clone` + `./update.sh`. For people who download a
 release archive, publish a **SHA-256** checksum (not MD5):
 
